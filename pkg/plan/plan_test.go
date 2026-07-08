@@ -141,7 +141,7 @@ func TestStateFile_SetDeleteRecord(t *testing.T) {
 func TestDiff_Create(t *testing.T) {
 	key := plan.MsmKey{Name: "dns-canary", Round: "high-freq"}
 	desired := map[plan.MsmKey]plan.DesiredMsm{
-		key: {Target: "canary.supabase.co", Type: "dns", Interval: 60, ProbeIDs: []uint32{1, 2, 3}},
+		key: {Target: "canary.supabase.co", Type: plan.MsmTypeDNS, Interval: 60, ProbeIDs: []uint32{1, 2, 3}},
 	}
 	cs := plan.Diff(desired, plan.NewStateFile())
 
@@ -156,7 +156,7 @@ func TestDiff_NoOp(t *testing.T) {
 	probes := []uint32{1001, 2002, 3003}
 
 	desired := map[plan.MsmKey]plan.DesiredMsm{
-		key: {Target: "canary.supabase.co", Type: "dns", Interval: 60, ProbeIDs: probes},
+		key: {Target: "canary.supabase.co", Type: plan.MsmTypeDNS, Interval: 60, ProbeIDs: probes},
 	}
 	state := sampleState(struct {
 		name, round string
@@ -191,7 +191,7 @@ func TestDiff_ProbeSetChanged(t *testing.T) {
 
 	desired := map[plan.MsmKey]plan.DesiredMsm{
 		// Remove 1, keep 2+3, add 4.
-		key: {Target: "canary.supabase.co", Type: "dns", Interval: 60, ProbeIDs: []uint32{2, 3, 4}},
+		key: {Target: "canary.supabase.co", Type: plan.MsmTypeDNS, Interval: 60, ProbeIDs: []uint32{2, 3, 4}},
 	}
 	state := sampleState(struct {
 		name, round string
@@ -219,7 +219,7 @@ func TestDiff_ProbeSetChanged(t *testing.T) {
 func TestDiff_ProbeSetAddsOnly(t *testing.T) {
 	key := plan.MsmKey{Name: "ping-edge", Round: "low-freq"}
 	desired := map[plan.MsmKey]plan.DesiredMsm{
-		key: {Target: "1.2.3.4", Type: "ping", Interval: 900, ProbeIDs: []uint32{1, 2, 3, 4}},
+		key: {Target: "1.2.3.4", Type: plan.MsmTypePing, Interval: 900, ProbeIDs: []uint32{1, 2, 3, 4}},
 	}
 	state := sampleState(struct {
 		name, round string
@@ -240,7 +240,7 @@ func TestDiff_StructuralChange(t *testing.T) {
 
 	// Interval changed: 60 → 120.
 	desired := map[plan.MsmKey]plan.DesiredMsm{
-		key: {Target: "canary.supabase.co", Type: "dns", Interval: 120, ProbeIDs: []uint32{1, 2}},
+		key: {Target: "canary.supabase.co", Type: plan.MsmTypeDNS, Interval: 120, ProbeIDs: []uint32{1, 2}},
 	}
 	state := sampleState(struct {
 		name, round string
@@ -267,7 +267,7 @@ func TestDiff_StructuralChange(t *testing.T) {
 func TestDiff_StructuralChange_TargetChanged(t *testing.T) {
 	key := plan.MsmKey{Name: "dns-canary", Round: "high-freq"}
 	desired := map[plan.MsmKey]plan.DesiredMsm{
-		key: {Target: "new.supabase.co", Type: "dns", Interval: 60, ProbeIDs: []uint32{1}},
+		key: {Target: "new.supabase.co", Type: plan.MsmTypeDNS, Interval: 60, ProbeIDs: []uint32{1}},
 	}
 	state := sampleState(struct {
 		name, round string
@@ -287,8 +287,8 @@ func TestDiff_MultipleEntries(t *testing.T) {
 	k3 := plan.MsmKey{Name: "ping-edge", Round: "low-freq"}
 
 	desired := map[plan.MsmKey]plan.DesiredMsm{
-		k1: {Target: "canary.supabase.co", Type: "dns", Interval: 60, ProbeIDs: []uint32{1}},
-		k2: {Target: "canary.supabase.co", Type: "tls", Interval: 60, ProbeIDs: []uint32{1}},
+		k1: {Target: "canary.supabase.co", Type: plan.MsmTypeDNS, Interval: 60, ProbeIDs: []uint32{1}},
+		k2: {Target: "canary.supabase.co", Type: plan.MsmTypeTLS, Interval: 60, ProbeIDs: []uint32{1}},
 		// k3 is absent from desired → should produce Stop.
 	}
 	state := sampleState(
@@ -318,8 +318,8 @@ func TestDesiredState(t *testing.T) {
 			{Name: "low-freq", Count: 3, IntervalSeconds: 900, MaxProbesPerCell: 2},
 		},
 		Measurements: []config.Measurement{
-			{Name: "dns-canary", Type: "dns", Target: "canary.supabase.co", Rounds: []string{"high-freq", "low-freq"}},
-			{Name: "ping-edge", Type: "ping", Target: "1.2.3.4", Rounds: []string{"low-freq"}},
+			{Name: "dns-canary", Type: config.TypeDNS, Target: "canary.supabase.co", Rounds: []string{"high-freq", "low-freq"}},
+			{Name: "ping-edge", Type: config.TypePing, Target: "1.2.3.4", Rounds: []string{"low-freq"}},
 		},
 	}
 
@@ -340,7 +340,7 @@ func TestDesiredState(t *testing.T) {
 
 	d := desired[plan.MsmKey{Name: "dns-canary", Round: "high-freq"}]
 	assert.Equal(t, "canary.supabase.co", d.Target)
-	assert.Equal(t, "dns", d.Type)
+	assert.Equal(t, plan.MsmTypeDNS, d.Type)
 	assert.Equal(t, 60, d.Interval)
 	assert.ElementsMatch(t, []uint32{10, 20}, d.ProbeIDs)
 
@@ -350,7 +350,7 @@ func TestDesiredState(t *testing.T) {
 
 	d = desired[plan.MsmKey{Name: "ping-edge", Round: "low-freq"}]
 	assert.Equal(t, "1.2.3.4", d.Target)
-	assert.Equal(t, "ping", d.Type)
+	assert.Equal(t, plan.MsmTypePing, d.Type)
 	assert.ElementsMatch(t, []uint32{30, 40, 50}, d.ProbeIDs)
 }
 
