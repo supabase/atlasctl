@@ -1,0 +1,73 @@
+snapshot: probes/snapshot.json
+state: state.yaml
+
+rounds:
+  - name: high-freq
+    count: 30
+    interval_seconds: 60
+    max_probes_per_cell: 1
+  - name: mid-freq
+    count: 60
+    interval_seconds: 300
+    max_probes_per_cell: 2
+  - name: low-freq
+    count: 100
+    interval_seconds: 900
+    max_probes_per_cell: 3
+
+measurements:
+  - name: dns-canary
+    type: dns
+    target: canary.supabase.co
+    query_type: A
+    rounds: [high-freq, mid-freq, low-freq]
+  - name: tls-canary
+    type: tls
+    target: canary.supabase.co
+    rounds: [high-freq, mid-freq]
+  - name: ping-edge
+    type: ping
+    target: 162.159.36.1
+    rounds: [low-freq]
+
+scoring:
+  asn:
+    7018: 10   # AT&T
+    7922: 8    # Comcast
+    28573: 8   # Claro Brazil
+  tags:
+    office: 5
+    datacentre: 4
+    fibre: 2
+    cable: 2
+    lte: 3
+    home: 1
+  countries:
+    BR: 5
+    US: 1
+    DE: 2
+    JP: 3
+  stability:
+    system-ipv4-stable-90d: 5
+    system-ipv4-stable-30d: 3
+
+exclude_tags:
+  - broken
+  - system-flakey-connection
+  - system-flakey-power
+  - system-ipv4-doesnt-work
+
+geo_diversity:
+  h3_resolution: 3
+
+cities:
+  - name: Ashburn
+    lat: 39.04
+    lon: -77.49
+    radius_km: 40
+    density_coefficient: 2.0
+  - name: São Paulo
+    lat: -23.55
+    lon: -46.63
+    radius_km: 60
+    density_coefficient: 3.0
