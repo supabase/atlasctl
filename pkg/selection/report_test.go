@@ -188,5 +188,3 @@ func TestReport_Format(t *testing.T) {
 	assert.True(t, strings.Contains(text, "A:"), "band A in text")
 }
 
-// testCtx2 avoids the circular type issue with the nopCtx helper in the same package.
-func testCtx2() interface{ Done() <-chan struct{} } { return nopCtx{} }
