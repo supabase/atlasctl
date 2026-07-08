@@ -9,6 +9,8 @@ require (
 )
 
 require (
+	github.com/Kl1mn/h3-go v0.0.4 // indirect
+	github.com/ThingsIXFoundation/h3-light v0.0.0-20230404055559-b4bb7d4d9c47 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
