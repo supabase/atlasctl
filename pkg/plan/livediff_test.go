@@ -32,7 +32,7 @@ func consistentSetup() (map[plan.MsmKey]plan.DesiredMsm, plan.StateFile, *plan.F
 	key := plan.MsmKey{Name: "dns-canary", Round: "high-freq"}
 
 	desired := map[plan.MsmKey]plan.DesiredMsm{
-		key: {Target: "canary.supabase.co", Type: "dns", Interval: 60, ProbeIDs: []uint32{1, 2}},
+		key: {Target: "canary.supabase.co", Type: plan.MsmTypeDNS, Interval: 60, ProbeIDs: []uint32{1, 2}},
 	}
 
 	state := plan.NewStateFile()
@@ -119,7 +119,7 @@ func TestLiveDiff_Ghost(t *testing.T) {
 	key := plan.MsmKey{Name: "dns-canary", Round: "high-freq"}
 
 	desired := map[plan.MsmKey]plan.DesiredMsm{
-		key: {Target: "canary.supabase.co", Type: "dns", Interval: 60, ProbeIDs: []uint32{1}},
+		key: {Target: "canary.supabase.co", Type: plan.MsmTypeDNS, Interval: 60, ProbeIDs: []uint32{1}},
 	}
 	state := plan.NewStateFile()
 	state.SetRecord("dns-canary", "high-freq", plan.MsmRecord{
@@ -158,7 +158,7 @@ func TestLiveDiff_OrphanAndGhostTogether(t *testing.T) {
 
 	desired := map[plan.MsmKey]plan.DesiredMsm{
 		{Name: "dns-canary", Round: "high-freq"}: {
-			Target: "canary.supabase.co", Type: "dns", Interval: 60, ProbeIDs: []uint32{1},
+			Target: "canary.supabase.co", Type: plan.MsmTypeDNS, Interval: 60, ProbeIDs: []uint32{1},
 		},
 	}
 

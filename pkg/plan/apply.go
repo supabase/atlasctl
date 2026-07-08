@@ -13,7 +13,7 @@ import (
 type MsmSpec struct {
 	Key      MsmKey
 	Target   string
-	Type     string // "dns", "ping", "tls", "traceroute"
+	Type     MsmType
 	Interval int
 	ProbeIDs []uint32
 }
@@ -74,7 +74,7 @@ func Apply(
 				log.Info().
 					Str("name", ch.Key.Name).
 					Str("round", ch.Key.Round).
-					Str("type", ch.Desired.Type).
+					Str("type", string(ch.Desired.Type)).
 					Str("target", ch.Desired.Target).
 					Msg("[dry-run] would create measurement")
 				continue
@@ -103,7 +103,7 @@ func Apply(
 			out.SetRecord(ch.Key.Name, ch.Key.Round, MsmRecord{
 				MsmID:    id,
 				Target:   ch.Desired.Target,
-				Type:     ch.Desired.Type,
+				Type:     string(ch.Desired.Type),
 				Interval: ch.Desired.Interval,
 				ProbeIDs: ch.Desired.ProbeIDs,
 			})

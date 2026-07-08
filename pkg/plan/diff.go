@@ -15,7 +15,7 @@ type MsmKey struct {
 // DesiredMsm describes the fully-resolved desired state for one (name, round) pair.
 type DesiredMsm struct {
 	Target   string
-	Type     string
+	Type     MsmType
 	Interval int
 	ProbeIDs []uint32
 }
@@ -75,7 +75,7 @@ func DesiredState(cfg config.Config, rounds []selection.SelectedRound) map[MsmKe
 		for _, roundName := range msm.Rounds {
 			desired[MsmKey{Name: msm.Name, Round: roundName}] = DesiredMsm{
 				Target:   msm.Target,
-				Type:     string(msm.Type),
+				Type:     MsmType(msm.Type),
 				Interval: roundInterval[roundName],
 				ProbeIDs: roundProbes[roundName],
 			}
@@ -145,7 +145,7 @@ func Diff(desired map[MsmKey]DesiredMsm, state StateFile) Changeset {
 // the recorded state and the desired state.
 func isStructuralChange(rec MsmRecord, want DesiredMsm) bool {
 	return rec.Target != want.Target ||
-		rec.Type != want.Type ||
+		MsmType(rec.Type) != want.Type ||
 		rec.Interval != want.Interval
 }
 
