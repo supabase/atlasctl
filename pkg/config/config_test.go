@@ -81,10 +81,9 @@ measurements:
 			errContains: "at least one round",
 		},
 		{
-			name:        "no measurements",
-			yaml:        `rounds: [{name: r, count: 10, interval_seconds: 60, max_probes_per_cell: 1}]`,
-			wantErr:     true,
-			errContains: "at least one measurement",
+			name:    "no measurements",
+			yaml:    `rounds: [{name: r, count: 10, interval_seconds: 60, max_probes_per_cell: 1}]`,
+			wantErr: false,
 		},
 		{
 			name: "duplicate round names",

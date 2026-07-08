@@ -6,7 +6,6 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/spf13/cobra"
 
-	"github.com/supabase/atlascli/pkg/config"
 	"github.com/supabase/atlascli/pkg/snapshot"
 )
 
@@ -17,12 +16,6 @@ func newRefreshCmd(f *globalFlags, deps Deps) *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
 			log := zerolog.Ctx(ctx)
-
-			cfg, err := config.Load(f.ConfigPath)
-			if err != nil {
-				return err
-			}
-			_ = cfg // reserved for future per-config snapshot path
 
 			apiKey, err := resolveAPIKey(f.APIKey)
 			if err != nil {

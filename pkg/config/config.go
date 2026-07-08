@@ -105,9 +105,6 @@ func (c *Config) validate() error {
 	if len(c.Rounds) == 0 {
 		errs = append(errs, errors.New("at least one round is required"))
 	}
-	if len(c.Measurements) == 0 {
-		errs = append(errs, errors.New("at least one measurement is required"))
-	}
 
 	roundNames := make(map[string]bool, len(c.Rounds))
 	for i, r := range c.Rounds {
