@@ -205,7 +205,18 @@ cities:
   - name: Frankfurt
     lat: 50.11
     lon: 8.68
-    density_coefficient: 1.5
+    density_coefficient: 0.7 # Frankfurt has too many probes
+  - name: Bellingham
+    lat: 48.7519
+    lon: -122.4787
+    radius_km: 40
+    score: 12 # raise score
+  - name: Berlin
+    lat: 52.520008
+    lon: 13.404954
+    radius_km: 70  # berlin is huge
+    score: -12 # downweight berlin
+
 ```
 
 ## Probe selection

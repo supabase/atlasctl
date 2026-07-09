@@ -68,7 +68,7 @@ func Report(rounds []SelectedRound, scoring config.ScoringConfig) CoverageReport
 			}
 
 			score := Score(p, scoring)
-			bands[AssignBand(score).String()]++
+			bands[AssignBand(score, scoring.BandThresholds.Effective()).String()]++
 
 			for _, res := range h3Resolutions {
 				cells[res][h3.LatLonToCell(p.Lat, p.Lon, res)] = struct{}{}

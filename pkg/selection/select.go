@@ -119,8 +119,8 @@ func buildCandidates(probes []snapshot.Probe, cfg config.Config, res int) []cand
 		if HardExcluded(p, cfg.ExcludeTags) {
 			continue
 		}
-		score := Score(p, cfg.Scoring)
-		band, hash := SortKey(p, score)
+		score := Score(p, cfg.Scoring) + cityScoreBonus(p, cfg.Cities)
+		band, hash := SortKey(p, score, cfg.Scoring.BandThresholds.Effective())
 		candidates = append(candidates, candidate{
 			probe: p,
 			band:  band,
@@ -146,24 +146,43 @@ func buildCandidates(probes []snapshot.Probe, cfg config.Config, res int) []cand
 }
 
 // cellCapacity returns the maximum number of probes allowed in a cell for one
-// round. If coef > 1.0 (city density override), the base maximum is scaled up
-// using ceiling division.
+// round. coef scales the base maximum: >1.0 relaxes it, <1.0 tightens it.
+// The result is always at least 1 so a city never blocks a region entirely.
 func cellCapacity(baseMax int, coef float64) int {
-	if coef <= 1.0 {
+	if coef == 1.0 {
 		return baseMax
 	}
-	return int(math.Ceil(float64(baseMax) * coef))
+	n := int(math.Ceil(float64(baseMax) * coef))
+	if n < 1 {
+		return 1
+	}
+	return n
 }
 
-// maxCityCoef returns the highest density coefficient from any city whose
-// radius covers probe p. Returns 1.0 if no city applies.
+// cityScoreBonus returns the sum of score weights from all cities whose radius
+// covers probe p. Returns 0 if no city applies or all matching cities have Score=0.
+func cityScoreBonus(p snapshot.Probe, cities []config.CityConfig) int {
+	bonus := 0
+	for _, city := range cities {
+		if city.Score != 0 && haversineKm(p.Lat, p.Lon, city.Lat, city.Lon) <= city.RadiusKm {
+			bonus += city.Score
+		}
+	}
+	return bonus
+}
+
+// maxCityCoef returns the density coefficient to apply to probe p. If the probe
+// falls within multiple city radii, the highest coefficient wins (boost takes
+// priority). Returns 1.0 if no city applies.
 func maxCityCoef(p snapshot.Probe, cities []config.CityConfig) float64 {
 	coef := 1.0
+	matched := false
 	for _, city := range cities {
 		if haversineKm(p.Lat, p.Lon, city.Lat, city.Lon) <= city.RadiusKm {
-			if city.DensityCoefficient > coef {
+			if !matched || city.DensityCoefficient > coef {
 				coef = city.DensityCoefficient
 			}
+			matched = true
 		}
 	}
 	return coef
