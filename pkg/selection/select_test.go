@@ -392,6 +392,66 @@ func TestSelect_GeoJSON(t *testing.T) {
 	assert.Equal(t, "r1", props["round"])
 }
 
+func TestSelect_ContinentalInterleaving(t *testing.T) {
+	// 8 Band-B probes from NA (US) and 4 Band-B probes from EU (DE), all with the
+	// same ASN score so they land in the same band. Each probe is in a distinct H3
+	// cell (coordinates are ~5° apart, far exceeding the ~60 km cell edge at res 3).
+	//
+	// Without interleaving: hash order produces roughly 4 NA + 2 EU for a 6-slot
+	// round (NA has 2× more candidates). With interleaving the algorithm alternates
+	// NA and EU within Band B, yielding exactly 3 NA + 3 EU.
+
+	var probes []snapshot.Probe
+
+	// 8 NA probes, each ~5° apart across North America.
+	for i := range 8 {
+		probes = append(probes, snapshot.Probe{
+			ID:          uint32(i + 1),
+			ASN4:        7018,
+			CountryCode: "US",
+			StatusID:    1,
+			Lat:         35 + float64(i)*4,
+			Lon:         -100 + float64(i)*3,
+		})
+	}
+	// 4 EU probes, each ~5° apart across Europe.
+	for i := range 4 {
+		probes = append(probes, snapshot.Probe{
+			ID:          uint32(100 + i),
+			ASN4:        7018,
+			CountryCode: "DE",
+			StatusID:    1,
+			Lat:         48 + float64(i)*5,
+			Lon:         8 + float64(i)*5,
+		})
+	}
+
+	// ASN 7018 weight 10 → score = 11 (base 1 + ASN 10) → Band B (threshold 8-14).
+	rounds := []config.Round{minimalRound("r1", 6, 1)}
+	cfg := minCfg(rounds)
+	cfg.Scoring = config.ScoringConfig{
+		ASN: map[uint32]int{7018: 10},
+	}
+
+	result, err := selection.Select(context.Background(), snapshot.Snapshot{Probes: probes}, cfg)
+	require.NoError(t, err)
+	require.Len(t, result, 1)
+	require.Len(t, result[0].Probes, 6, "round should fill to count=6")
+
+	naCount, euCount := 0, 0
+	for _, p := range result[0].Probes {
+		switch p.CountryCode {
+		case "US":
+			naCount++
+		case "DE":
+			euCount++
+		}
+	}
+	// Interleaving: Band-B round-robin → NA, EU, NA, EU, NA, EU → 3 each.
+	assert.Equal(t, 3, naCount, "interleaving should pick 3 of 8 NA probes")
+	assert.Equal(t, 3, euCount, "interleaving should pick 3 of 4 EU probes")
+}
+
 // ── benchmark ─────────────────────────────────────────────────────────────────
 
 // BenchmarkSelect verifies the plan's exit criterion: 50k probes, 3 rounds < 500 ms.

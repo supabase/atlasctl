@@ -53,9 +53,12 @@ type candidate struct {
 // The algorithm:
 //  1. Filter hard-excluded probes.
 //  2. Score remaining probes and sort by (Band DESC, hash ASC, ID ASC).
-//  3. Pre-compute per-cell density coefficient from city config.
-//  4. For each round, walk the sorted list in order, skipping already-selected
-//     probes and H3 cells that have reached capacity, until the round target is met.
+//  3. Reorder by continental interleaving: within each band tier, round-robin
+//     through the six geographic zones so no single region dominates.
+//  4. Pre-compute per-cell density coefficient from city config.
+//  5. For each round, walk the interleaved list in order, skipping
+//     already-selected probes and H3 cells that have reached capacity,
+//     until the round target is met.
 //
 // Rounds are processed in the order they appear in cfg. Context cancellation is
 // checked between rounds.
@@ -65,7 +68,13 @@ func Select(ctx context.Context, snap snapshot.Snapshot, cfg config.Config) ([]S
 	// Step 1+2: build candidates, filter excluded, score, sort.
 	candidates := buildCandidates(snap.Probes, cfg, res)
 
-	// Step 3: pre-compute per-cell max density coefficient.
+	// Step 3: reorder by continental interleaving within each band tier.
+	// This ensures that within a round, no single geographic zone can fill all
+	// slots before other zones have had a turn — regardless of how scoring weights
+	// are tuned.
+	candidates = interleaveContinents(candidates)
+
+	// Step 4: pre-compute per-cell max density coefficient.
 	// A cell inherits the highest coefficient of any probe whose coordinates
 	// fall within a city's radius. This is a proxy for the cell center: at
 	// resolution 3 (~12 000 km² cells, ~60 km edge) the difference is small.
@@ -76,7 +85,7 @@ func Select(ctx context.Context, snap snapshot.Snapshot, cfg config.Config) ([]S
 		}
 	}
 
-	// Step 4: round-by-round selection.
+	// Step 5: round-by-round selection.
 	selected := make(map[uint32]struct{}, len(candidates))
 	rounds := make([]SelectedRound, 0, len(cfg.Rounds))
 
@@ -186,6 +195,53 @@ func maxCityCoef(p snapshot.Probe, cities []config.CityConfig) float64 {
 		}
 	}
 	return coef
+}
+
+// interleaveContinents reorders a sorted candidate slice so that within each
+// band tier, probes are distributed across geographic zones in round-robin
+// order before any zone gets a second pick.
+//
+// Input must already be sorted by (Band DESC, hash ASC) — as produced by
+// buildCandidates. The function preserves that per-zone order within each band.
+//
+// Example with Band-A candidates NA=[1,2,3], EU=[4,5,6], APAC=[7], LATAM=[8,9]:
+//
+//	pass 0: NA-1, EU-4, APAC-7, LATAM-8
+//	pass 1: NA-2, EU-5,         LATAM-9
+//	pass 2: NA-3, EU-6
+//
+// The H3 cell filter in Select is applied to this reordered slice unchanged.
+func interleaveContinents(candidates []candidate) []candidate {
+	type zbKey struct {
+		zone Zone
+		band Band
+	}
+	buckets := make(map[zbKey][]candidate, len(zoneOrder)*4)
+	for _, c := range candidates {
+		k := zbKey{ZoneOf(c.probe.CountryCode), c.band}
+		buckets[k] = append(buckets[k], c)
+	}
+
+	result := make([]candidate, 0, len(candidates))
+
+	for _, band := range []Band{BandA, BandB, BandC, BandD} {
+		maxDepth := 0
+		for _, z := range zoneOrder {
+			if n := len(buckets[zbKey{z, band}]); n > maxDepth {
+				maxDepth = n
+			}
+		}
+		for pass := 0; pass < maxDepth; pass++ {
+			for _, z := range zoneOrder {
+				k := zbKey{z, band}
+				if pass < len(buckets[k]) {
+					result = append(result, buckets[k][pass])
+				}
+			}
+		}
+	}
+
+	return result
 }
 
 // haversineKm returns the great-circle distance in kilometres between two

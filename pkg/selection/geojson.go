@@ -33,6 +33,9 @@ type geoJSONProperties struct {
 func GeoJSON(rounds []SelectedRound) ([]byte, error) {
 	var features []geoJSONFeature
 	for _, r := range rounds {
+		if r.Round.Name != "high-freq" {
+			continue
+		}
 		for _, p := range r.Probes {
 			features = append(features, geoJSONFeature{
 				Type: "Feature",
