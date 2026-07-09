@@ -58,6 +58,7 @@ func newPlanCmd(f *globalFlags, deps Deps) *cobra.Command {
 
 			printChangeset(cmd.OutOrStdout(), cs)
 			printWarnings(cmd.OutOrStdout(), warnings)
+			printCreditEstimate(cmd.OutOrStdout(), plan.EstimateCredits(desired))
 			return nil
 		},
 	}
