@@ -281,7 +281,7 @@ geo_diversity:
 			errContains: "h3_resolution must be between 1 and 15",
 		},
 		{
-			name: "city density_coefficient below 1",
+			name: "city density_coefficient between 0 and 1 is valid",
 			yaml: `
 rounds:
   - name: r
@@ -300,8 +300,30 @@ cities:
     radius_km: 40
     density_coefficient: 0.5
 `,
+			wantErr: false,
+		},
+		{
+			name: "city density_coefficient zero is invalid",
+			yaml: `
+rounds:
+  - name: r
+    count: 10
+    interval_seconds: 60
+    max_probes_per_cell: 1
+measurements:
+  - name: m
+    type: dns
+    target: x.com
+    rounds: [r]
+cities:
+  - name: Ashburn
+    lat: 39.04
+    lon: -77.49
+    radius_km: 40
+    density_coefficient: 0
+`,
 			wantErr:     true,
-			errContains: "density_coefficient must be >= 1.0",
+			errContains: "density_coefficient must be > 0",
 		},
 		{
 			name: "city missing radius_km",

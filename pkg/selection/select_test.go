@@ -156,6 +156,43 @@ func TestSelect_H3Limit(t *testing.T) {
 	}
 }
 
+func TestSelect_CityDensityReduction(t *testing.T) {
+	// 5 probes in the same H3 cell near Ashburn.
+	// Base cap=4, coefficient=0.5 → ceil(4 * 0.5) = 2 probes allowed.
+	const (
+		baseLat = 39.04
+		baseLon = -77.49
+	)
+	var probes []snapshot.Probe
+	for i := 0; i < 5; i++ {
+		probes = append(probes, snapshot.Probe{
+			ID:       uint32(i + 1),
+			StatusID: 1,
+			Lat:      baseLat + float64(i)*0.001,
+			Lon:      baseLon + float64(i)*0.001,
+		})
+	}
+
+	city := config.CityConfig{
+		Name:               "Ashburn",
+		Lat:                baseLat,
+		Lon:                baseLon,
+		RadiusKm:           50,
+		DensityCoefficient: 0.5,
+	}
+
+	rounds := []config.Round{minimalRound("r1", 5, 4)} // base cap=4, city reduces to 2
+	cfg := minCfg(rounds)
+	cfg.Cities = []config.CityConfig{city}
+
+	result, err := selection.Select(context.Background(), snapshot.Snapshot{Probes: probes}, cfg)
+	require.NoError(t, err)
+	require.Len(t, result, 1)
+
+	assert.Equal(t, 2, len(result[0].Probes),
+		"density_coefficient=0.5 should reduce cap from 4 to ceil(4*0.5)=2")
+}
+
 func TestSelect_CityDensity(t *testing.T) {
 	// Put 5 probes tightly clustered near Ashburn (all in the same H3 cell).
 	// City density_coefficient=3.0 should raise the per-cell cap from 1 to 3.
@@ -195,6 +232,59 @@ func TestSelect_CityDensity(t *testing.T) {
 	// Effective cap = ceil(1 * 3.0) = 3, so round should yield 3 probes from the cell.
 	assert.Equal(t, 3, len(result[0].Probes),
 		"city density_coefficient=3 should allow 3 probes from the same cell")
+}
+
+func TestSelect_CityScore(t *testing.T) {
+	// Two groups of identical generic probes in different locations.
+	// Group A is near Ashburn, which has score=20 → pushed to BandA.
+	// Group B is far away with no city bonus → score=1 (BandD).
+	// With cap=1 per cell and count=5, selection should prefer Group A.
+	const (
+		ashburnLat = 39.04
+		ashburnLon = -77.49
+	)
+
+	var probes []snapshot.Probe
+	// 5 probes near Ashburn (spread across different H3 cells).
+	for i := 0; i < 5; i++ {
+		probes = append(probes, snapshot.Probe{
+			ID:       uint32(i + 1),
+			StatusID: 1,
+			Lat:      ashburnLat + float64(i)*0.5,
+			Lon:      ashburnLon + float64(i)*0.5,
+		})
+	}
+	// 5 probes far away (Tokyo area).
+	for i := 0; i < 5; i++ {
+		probes = append(probes, snapshot.Probe{
+			ID:       uint32(i + 100),
+			StatusID: 1,
+			Lat:      35.68 + float64(i)*0.5,
+			Lon:      139.69 + float64(i)*0.5,
+		})
+	}
+
+	city := config.CityConfig{
+		Name:     "Ashburn",
+		Lat:      ashburnLat,
+		Lon:      ashburnLon,
+		RadiusKm: 300, // generous radius to cover the spread
+		Score:    20,
+	}
+
+	rounds := []config.Round{minimalRound("r1", 5, 1)}
+	cfg := minCfg(rounds)
+	cfg.Cities = []config.CityConfig{city}
+
+	result, err := selection.Select(context.Background(), snapshot.Snapshot{Probes: probes}, cfg)
+	require.NoError(t, err)
+	require.Len(t, result, 1)
+	require.Len(t, result[0].Probes, 5)
+
+	// All selected probes should be from the Ashburn group (IDs 1–5).
+	for _, p := range result[0].Probes {
+		assert.Less(t, p.ID, uint32(100), "expected Ashburn probe (ID<100), got ID=%d", p.ID)
+	}
 }
 
 func TestSelect_HardExclusion(t *testing.T) {
@@ -268,7 +358,7 @@ func TestSelect_GeoJSON(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, result, 1)
 
-	gj, err := result[0].GeoJSON()
+	gj, err := selection.GeoJSON(result)
 	require.NoError(t, err)
 
 	var fc map[string]any
@@ -296,6 +386,10 @@ func TestSelect_GeoJSON(t *testing.T) {
 	// Probe 1: Lat=39.04 Lon=-77.49 → GeoJSON coords=[-77.49, 39.04]
 	assert.InDelta(t, -77.49, coords[0].(float64), 0.001)
 	assert.InDelta(t, 39.04, coords[1].(float64), 0.001)
+
+	// Verify round name is embedded in properties.
+	props := probe1Feature["properties"].(map[string]any)
+	assert.Equal(t, "r1", props["round"])
 }
 
 // ── benchmark ─────────────────────────────────────────────────────────────────

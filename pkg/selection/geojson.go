@@ -8,9 +8,9 @@ type geoJSONFeatureCollection struct {
 }
 
 type geoJSONFeature struct {
-	Type       string              `json:"type"`
-	Geometry   geoJSONPoint        `json:"geometry"`
-	Properties geoJSONProperties   `json:"properties"`
+	Type       string            `json:"type"`
+	Geometry   geoJSONPoint      `json:"geometry"`
+	Properties geoJSONProperties `json:"properties"`
 }
 
 type geoJSONPoint struct {
@@ -23,26 +23,35 @@ type geoJSONProperties struct {
 	ASN4        uint32   `json:"asn4"`
 	CountryCode string   `json:"country_code"`
 	Tags        []string `json:"tags"`
+	Round       string   `json:"round"`
 }
 
-// GeoJSON serialises the selected probe set for this round as a GeoJSON
-// FeatureCollection. Each probe becomes a Point feature.
-func (r SelectedRound) GeoJSON() ([]byte, error) {
-	features := make([]geoJSONFeature, len(r.Probes))
-	for i, p := range r.Probes {
-		features[i] = geoJSONFeature{
-			Type: "Feature",
-			Geometry: geoJSONPoint{
-				Type:        "Point",
-				Coordinates: [2]float64{p.Lon, p.Lat},
-			},
-			Properties: geoJSONProperties{
-				ProbeID:     p.ID,
-				ASN4:        p.ASN4,
-				CountryCode: p.CountryCode,
-				Tags:        p.Tags,
-			},
+// GeoJSON serialises all selected rounds as a single GeoJSON FeatureCollection.
+// Each probe becomes a Point feature with a "round" property identifying which
+// round it was selected for. A single collection is valid GeoJSON and can be
+// loaded directly into geojson.io or any GIS tool.
+func GeoJSON(rounds []SelectedRound) ([]byte, error) {
+	var features []geoJSONFeature
+	for _, r := range rounds {
+		for _, p := range r.Probes {
+			features = append(features, geoJSONFeature{
+				Type: "Feature",
+				Geometry: geoJSONPoint{
+					Type:        "Point",
+					Coordinates: [2]float64{p.Lon, p.Lat},
+				},
+				Properties: geoJSONProperties{
+					ProbeID:     p.ID,
+					ASN4:        p.ASN4,
+					CountryCode: p.CountryCode,
+					Tags:        p.Tags,
+					Round:       r.Round.Name,
+				},
+			})
 		}
+	}
+	if features == nil {
+		features = []geoJSONFeature{}
 	}
 	return json.Marshal(geoJSONFeatureCollection{
 		Type:     "FeatureCollection",

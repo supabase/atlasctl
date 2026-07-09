@@ -36,13 +36,11 @@ func newSelectCmd(f *globalFlags, _ Deps) *cobra.Command {
 
 			switch format {
 			case "geojson":
-				for _, r := range rounds {
-					data, err := r.GeoJSON()
-					if err != nil {
-						return err
-					}
-					fmt.Fprintln(cmd.OutOrStdout(), string(data))
+				data, err := selection.GeoJSON(rounds)
+				if err != nil {
+					return err
 				}
+				fmt.Fprintln(cmd.OutOrStdout(), string(data))
 			default:
 				report := selection.Report(rounds, cfg.Scoring)
 				fmt.Fprintln(cmd.OutOrStdout(), report.Format())

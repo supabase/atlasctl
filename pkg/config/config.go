@@ -47,12 +47,36 @@ type Measurement struct {
 	Rounds    []string        `yaml:"rounds"`
 }
 
+// BandThresholds defines the minimum score for each band tier.
+// Scores below C fall into BandD. Defaults: A=15, B=8, C=3.
+type BandThresholds struct {
+	A int `yaml:"a"`
+	B int `yaml:"b"`
+	C int `yaml:"c"`
+}
+
+// Effective returns the thresholds with defaults applied for any zero value.
+// This allows ScoringConfig to be constructed without going through Load.
+func (t BandThresholds) Effective() BandThresholds {
+	if t.A == 0 {
+		t.A = 15
+	}
+	if t.B == 0 {
+		t.B = 8
+	}
+	if t.C == 0 {
+		t.C = 3
+	}
+	return t
+}
+
 // ScoringConfig holds additive weights for probe scoring.
 type ScoringConfig struct {
-	ASN       map[uint32]int `yaml:"asn"`
-	Tags      map[string]int `yaml:"tags"`
-	Countries map[string]int `yaml:"countries"`
-	Stability map[string]int `yaml:"stability"`
+	ASN            map[uint32]int `yaml:"asn"`
+	Tags           map[string]int `yaml:"tags"`
+	Countries      map[string]int `yaml:"countries"`
+	Stability      map[string]int `yaml:"stability"`
+	BandThresholds BandThresholds `yaml:"band_thresholds"`
 }
 
 // GeoConfig controls geographic diversity parameters.
@@ -60,13 +84,14 @@ type GeoConfig struct {
 	H3Resolution int `yaml:"h3_resolution"`
 }
 
-// CityConfig defines a city cluster with a relaxed H3 cell capacity.
+// CityConfig defines a city cluster with optional probe scoring and H3 cell capacity overrides.
 type CityConfig struct {
 	Name               string  `yaml:"name"`
 	Lat                float64 `yaml:"lat"`
 	Lon                float64 `yaml:"lon"`
 	RadiusKm           float64 `yaml:"radius_km"`
 	DensityCoefficient float64 `yaml:"density_coefficient"`
+	Score              int     `yaml:"score"` // additive score bonus for probes within this city's radius; 0 = no effect
 }
 
 // Load reads and validates a Config from a YAML file at path.
@@ -89,6 +114,16 @@ func Load(path string) (*Config, error) {
 func (c *Config) applyDefaults() {
 	if c.GeoDiversity.H3Resolution == 0 {
 		c.GeoDiversity.H3Resolution = 3
+	}
+	t := &c.Scoring.BandThresholds
+	if t.A == 0 {
+		t.A = 15
+	}
+	if t.B == 0 {
+		t.B = 8
+	}
+	if t.C == 0 {
+		t.C = 3
 	}
 }
 
@@ -156,6 +191,17 @@ func (c *Config) validate() error {
 		errs = append(errs, fmt.Errorf("geo_diversity.h3_resolution must be between 1 and 15, got %d", res))
 	}
 
+	t := c.Scoring.BandThresholds
+	if t.C <= 0 {
+		errs = append(errs, fmt.Errorf("scoring.band_thresholds.c must be > 0, got %d", t.C))
+	}
+	if t.B <= t.C {
+		errs = append(errs, fmt.Errorf("scoring.band_thresholds.b (%d) must be greater than c (%d)", t.B, t.C))
+	}
+	if t.A <= t.B {
+		errs = append(errs, fmt.Errorf("scoring.band_thresholds.a (%d) must be greater than b (%d)", t.A, t.B))
+	}
+
 	for i, city := range c.Cities {
 		if city.Name == "" {
 			errs = append(errs, fmt.Errorf("cities[%d]: name is required", i))
@@ -163,8 +209,8 @@ func (c *Config) validate() error {
 		if city.RadiusKm <= 0 {
 			errs = append(errs, fmt.Errorf("city %q: radius_km must be positive", city.Name))
 		}
-		if city.DensityCoefficient < 1.0 {
-			errs = append(errs, fmt.Errorf("city %q: density_coefficient must be >= 1.0", city.Name))
+		if city.DensityCoefficient <= 0 {
+			errs = append(errs, fmt.Errorf("city %q: density_coefficient must be > 0", city.Name))
 		}
 	}
 

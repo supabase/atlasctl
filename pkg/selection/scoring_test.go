@@ -173,6 +173,7 @@ func TestScore(t *testing.T) {
 }
 
 func TestBand(t *testing.T) {
+	thresholds := config.BandThresholds{A: 15, B: 8, C: 3}
 	tests := []struct {
 		score int
 		want  selection.Band
@@ -191,9 +192,17 @@ func TestBand(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		got := selection.AssignBand(tt.score)
+		got := selection.AssignBand(tt.score, thresholds)
 		assert.Equal(t, tt.want, got, "AssignBand(%d)", tt.score)
 	}
+}
+
+func TestBand_CustomThresholds(t *testing.T) {
+	thresholds := config.BandThresholds{A: 30, B: 20, C: 10}
+	assert.Equal(t, selection.BandD, selection.AssignBand(9, thresholds))
+	assert.Equal(t, selection.BandC, selection.AssignBand(10, thresholds))
+	assert.Equal(t, selection.BandB, selection.AssignBand(20, thresholds))
+	assert.Equal(t, selection.BandA, selection.AssignBand(30, thresholds))
 }
 
 func TestBand_Order(t *testing.T) {
@@ -269,9 +278,10 @@ func TestSortKey_Determinism(t *testing.T) {
 	probe := snapshot.Probe{ID: 12345, ASN4: 7018, CountryCode: "US", Tags: []string{"office"}}
 	cfg := referenceScoringConfig()
 	score := selection.Score(probe, cfg)
+	thresholds := config.BandThresholds{A: 15, B: 8, C: 3}
 
-	band1, hash1 := selection.SortKey(probe, score)
-	band2, hash2 := selection.SortKey(probe, score)
+	band1, hash1 := selection.SortKey(probe, score, thresholds)
+	band2, hash2 := selection.SortKey(probe, score, thresholds)
 
 	assert.Equal(t, band1, band2, "Band must be deterministic")
 	assert.Equal(t, hash1, hash2, "Hash must be deterministic")
@@ -282,9 +292,10 @@ func TestSortKey_DifferentProbes(t *testing.T) {
 	// possible but vanishingly unlikely for small probe sets).
 	p1 := snapshot.Probe{ID: 1}
 	p2 := snapshot.Probe{ID: 2}
+	thresholds := config.BandThresholds{A: 15, B: 8, C: 3}
 
-	_, h1 := selection.SortKey(p1, 1)
-	_, h2 := selection.SortKey(p2, 1)
+	_, h1 := selection.SortKey(p1, 1, thresholds)
+	_, h2 := selection.SortKey(p2, 1, thresholds)
 
 	assert.NotEqual(t, h1, h2, "distinct probe IDs should produce distinct hashes")
 }

@@ -67,15 +67,15 @@ func Score(p snapshot.Probe, cfg config.ScoringConfig) int {
 	return score
 }
 
-// AssignBand maps an integer score to a Band tier.
-// Scores ≤0 are clamped to BandD to handle unexpected negative weights.
-func AssignBand(score int) Band {
+// AssignBand maps an integer score to a Band tier using the provided thresholds.
+// Scores below t.C fall into BandD to handle unexpected negative weights.
+func AssignBand(score int, t config.BandThresholds) Band {
 	switch {
-	case score >= 15:
+	case score >= t.A:
 		return BandA
-	case score >= 8:
+	case score >= t.B:
 		return BandB
-	case score >= 3:
+	case score >= t.C:
 		return BandC
 	default:
 		return BandD
@@ -87,8 +87,8 @@ func AssignBand(score int) Band {
 // ascending. The hash is FNV-1a over the probe ID, which is permanent and
 // unique — so the tiebreaker is stable across snapshots as long as the probe
 // population doesn't change.
-func SortKey(p snapshot.Probe, score int) (Band, uint64) {
-	return AssignBand(score), probeHash(p.ID)
+func SortKey(p snapshot.Probe, score int, t config.BandThresholds) (Band, uint64) {
+	return AssignBand(score, t), probeHash(p.ID)
 }
 
 // probeHash returns a 64-bit FNV-1a hash of the probe ID.
