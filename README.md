@@ -265,7 +265,48 @@ Rounds are filled in order of decreasing frequency. A probe selected for `high-f
 
 ### Geographic diversity
 
-Each probe is mapped to an H3 hexagonal cell. The `max_probes_per_cell` limit per round prevents geographic clustering. City density overrides allow a higher limit in specific metros.
+Two mechanisms work together to spread probes across the globe: continental interleaving and H3 cell limits.
+
+#### Continental interleaving
+
+The RIPE Atlas probe pool is heavily concentrated in the US and Europe. Left to pure score ordering, a round of 40 probes can easily fill all slots from those two regions, leaving Asia-Pacific, Latin America, and Africa unrepresented regardless of how scoring weights are tuned.
+
+After scoring, probes are grouped into six continental zones:
+
+| Zone  | Countries                                          |
+|-------|----------------------------------------------------|
+| NA    | United States, Canada                              |
+| EU    | Europe (including Russia and the Caucasus)         |
+| APAC  | Asia-Pacific and Oceania                           |
+| LATAM | Latin America and the Caribbean                    |
+| MENA  | Middle East and North Africa                       |
+| SSA   | Sub-Saharan Africa                                 |
+
+Within each band tier, the selection walk interleaves zones in round-robin order before any zone gets a second pick. The effect is easiest to see with an example. Suppose a round has these Band B candidates:
+
+```
+  NA:    [probe 1, probe 2, probe 3, probe 4, probe 5]
+  EU:    [probe 6, probe 7, probe 8]
+  APAC:  [probe 9]
+  LATAM: [probe 10, probe 11]
+  MENA:  (none in Band B)
+  SSA:   (none in Band B)
+
+  Interleaved order:
+    pass 1:  NA-1,  EU-6,  APAC-9, LATAM-10
+    pass 2:  NA-2,  EU-7,          LATAM-11
+    pass 3:  NA-3,  EU-8
+    pass 4:  NA-4
+    pass 5:  NA-5
+```
+
+The H3 cell filter then applies to this reordered list. Selecting 8 probes from the example above yields 3 from NA, 3 from EU, 1 from APAC, and 1 from LATAM, rather than 5 from NA and 3 from EU.
+
+Band priority is fully preserved: Band A probes from any zone are exhausted before Band B probes from any zone enter the walk. Within a zone, probes are ordered by the same `(band DESC, FNV-1a(probe_id) ASC)` key as before, so within-zone assignment is stable across snapshot refreshes.
+
+#### H3 cell limits
+
+Each probe is mapped to an H3 hexagonal cell. The `max_probes_per_cell` limit per round prevents geographic clustering within a zone. City density overrides allow a higher limit in specific metros.
 
 | Resolution | Avg cell area  | Useful for              |
 |------------|----------------|-------------------------|
