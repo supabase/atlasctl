@@ -354,6 +354,58 @@ func TestDesiredState(t *testing.T) {
 	assert.ElementsMatch(t, []uint32{30, 40, 50}, d.ProbeIDs)
 }
 
+// ── credit estimation ─────────────────────────────────────────────────────────
+
+func TestEstimateCredits(t *testing.T) {
+	// dns-canary/high-freq: 30 probes, 60s interval, DNS (10 credits/result)
+	//   results/day = 30 × (86400/60) = 30 × 1440 = 43200
+	//   credits/day = 43200 × 10 = 432000
+	//
+	// ping-edge/low-freq: 50 probes, 900s interval, Ping (3 credits/result)
+	//   results/day = 50 × (86400/900) = 50 × 96 = 4800
+	//   credits/day = 4800 × 3 = 14400
+	//
+	// total daily = 446400, weekly = 3124800
+	desired := map[plan.MsmKey]plan.DesiredMsm{
+		{Name: "dns-canary", Round: "high-freq"}: {
+			Target: "canary.supabase.co", Type: plan.MsmTypeDNS,
+			Interval: 60, ProbeIDs: makeProbeIDs(30),
+		},
+		{Name: "ping-edge", Round: "low-freq"}: {
+			Target: "1.2.3.4", Type: plan.MsmTypePing,
+			Interval: 900, ProbeIDs: makeProbeIDs(50),
+		},
+	}
+
+	est := plan.EstimateCredits(desired)
+
+	assert.Equal(t, int64(446400), est.Daily)
+	assert.Equal(t, int64(3124800), est.Weekly)
+	assert.Len(t, est.Lines, 2)
+
+	// Lines sorted descending by PerDay; dns-canary (432000) > ping-edge (14400).
+	assert.Equal(t, "dns-canary", est.Lines[0].Key.Name)
+	assert.Equal(t, int64(432000), est.Lines[0].PerDay)
+	assert.Equal(t, "ping-edge", est.Lines[1].Key.Name)
+	assert.Equal(t, int64(14400), est.Lines[1].PerDay)
+}
+
+func TestEstimateCredits_Empty(t *testing.T) {
+	est := plan.EstimateCredits(map[plan.MsmKey]plan.DesiredMsm{})
+	assert.Equal(t, int64(0), est.Daily)
+	assert.Equal(t, int64(0), est.Weekly)
+	assert.Empty(t, est.Lines)
+}
+
+// makeProbeIDs returns a slice of n distinct probe IDs starting at 1.
+func makeProbeIDs(n int) []uint32 {
+	ids := make([]uint32, n)
+	for i := range ids {
+		ids[i] = uint32(i + 1)
+	}
+	return ids
+}
+
 // ── tag codec ─────────────────────────────────────────────────────────────────
 
 func TestTagCodec(t *testing.T) {

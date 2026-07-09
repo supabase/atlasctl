@@ -92,6 +92,22 @@ stop    ping-old          low-freq   id=12345600
 
 If the state file is absent (first run), `plan` treats all desired measurements as new creates.
 
+`plan` also prints a projected credit burn based on the desired state: probe count, measurement type, and interval per (measurement, round) pair, rolled up to daily and weekly totals.
+
+```
+CREDIT BURN (projected)
+NAME         ROUND      TYPE  PROBES  INTERVAL  PER DAY
+dns-canary   high-freq  dns   30      60s       432000
+tls-canary   high-freq  tls   30      60s       432000
+dns-canary   mid-freq   dns   60      300s      172800
+dns-canary   low-freq   dns   100     900s      96000
+tls-canary   mid-freq   tls   60      300s      172800
+ping-edge    low-freq   ping  100     900s      28800
+Total: 1334400/day  9340800/week
+```
+
+Credit costs are fixed by the RIPE Atlas platform: DNS and TLS cost 10 credits per result, ping costs 3, and traceroute costs 30. The projected total reflects the desired state after selection, not what is currently running.
+
 ### apply
 
 Executes the plan: creates new measurements, adds and removes probes on existing ones, and stops measurements no longer in config. Writes the updated state file after all changes complete. Prompts for confirmation before executing unless `--yes` is passed.
