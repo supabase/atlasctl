@@ -26,6 +26,31 @@ type geoJSONProperties struct {
 	Round       string   `json:"round"`
 }
 
+// GeoJSONRound serialises a single SelectedRound as a GeoJSON FeatureCollection.
+func GeoJSONRound(r SelectedRound) ([]byte, error) {
+	features := make([]geoJSONFeature, 0, len(r.Probes))
+	for _, p := range r.Probes {
+		features = append(features, geoJSONFeature{
+			Type: "Feature",
+			Geometry: geoJSONPoint{
+				Type:        "Point",
+				Coordinates: [2]float64{p.Lon, p.Lat},
+			},
+			Properties: geoJSONProperties{
+				ProbeID:     p.ID,
+				ASN4:        p.ASN4,
+				CountryCode: p.CountryCode,
+				Tags:        p.Tags,
+				Round:       r.Round.Name,
+			},
+		})
+	}
+	return json.Marshal(geoJSONFeatureCollection{
+		Type:     "FeatureCollection",
+		Features: features,
+	})
+}
+
 // GeoJSON serialises all selected rounds as a single GeoJSON FeatureCollection.
 // Each probe becomes a Point feature with a "round" property identifying which
 // round it was selected for. A single collection is valid GeoJSON and can be
