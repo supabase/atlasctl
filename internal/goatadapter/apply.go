@@ -18,9 +18,9 @@ type ApplyClient struct {
 }
 
 // NewApplyClient returns an ApplyClient ready for use.
-func NewApplyClient(apiKey *uuid.UUID, verbose bool) *ApplyClient {
+func NewApplyClient(apiKey *uuid.UUID, verbose bool, codec plan.TagCodec) *ApplyClient {
 	return &ApplyClient{
-		MsmClient: MsmClient{APIKey: apiKey, Verbose: verbose},
+		MsmClient: MsmClient{APIKey: apiKey, Verbose: verbose, TagCodec: codec},
 	}
 }
 
@@ -39,19 +39,20 @@ func (c *ApplyClient) CreateMeasurement(ctx context.Context, spec plan.MsmSpec) 
 	ms.ApiKey(c.MsmClient.APIKey)
 	ms.Verbose(c.MsmClient.Verbose)
 
-	desc := "Supabase telemetry " + plan.FormatTag(spec.Key.Name, spec.Key.Round)
+	desc := c.MsmClient.TagCodec.Format(spec.Key.Name, spec.Key.Round)
 	baseOpts := &goat.BaseOptions{Interval: uint(spec.Interval)}
+	af := uint(spec.AF)
 
 	var defErr error
 	switch spec.Type {
 	case "dns":
-		defErr = ms.AddDns(desc, spec.Target, 4, baseOpts, &goat.DnsOptions{Type: "A"})
+		defErr = ms.AddDns(desc, spec.Target, af, baseOpts, &goat.DnsOptions{Type: "A"})
 	case "ping":
-		defErr = ms.AddPing(desc, spec.Target, 4, baseOpts, nil)
+		defErr = ms.AddPing(desc, spec.Target, af, baseOpts, nil)
 	case "tls":
-		defErr = ms.AddTls(desc, spec.Target, 4, baseOpts, nil)
+		defErr = ms.AddTls(desc, spec.Target, af, baseOpts, nil)
 	case "traceroute":
-		defErr = ms.AddTrace(desc, spec.Target, 4, baseOpts, nil)
+		defErr = ms.AddTrace(desc, spec.Target, af, baseOpts, nil)
 	default:
 		return 0, fmt.Errorf("unsupported measurement type %q", spec.Type)
 	}

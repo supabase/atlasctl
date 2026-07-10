@@ -16,6 +16,7 @@ type MsmKey struct {
 type DesiredMsm struct {
 	Target   string
 	Type     MsmType
+	AF       int // address family: 4 or 6
 	Interval int
 	ProbeIDs []uint32
 }
@@ -76,6 +77,7 @@ func DesiredState(cfg config.Config, rounds []selection.SelectedRound) map[MsmKe
 			desired[MsmKey{Name: msm.Name, Round: roundName}] = DesiredMsm{
 				Target:   msm.Target,
 				Type:     MsmType(msm.Type),
+				AF:       msm.AF,
 				Interval: roundInterval[roundName],
 				ProbeIDs: roundProbes[roundName],
 			}
@@ -146,6 +148,7 @@ func Diff(desired map[MsmKey]DesiredMsm, state StateFile) Changeset {
 func isStructuralChange(rec MsmRecord, want DesiredMsm) bool {
 	return rec.Target != want.Target ||
 		MsmType(rec.Type) != want.Type ||
+		rec.AF != want.AF ||
 		rec.Interval != want.Interval
 }
 
