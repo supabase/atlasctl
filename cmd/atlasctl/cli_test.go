@@ -12,8 +12,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/supabase/atlascli/pkg/plan"
-	"github.com/supabase/atlascli/pkg/snapshot"
+	"github.com/supabase/atlasctl/pkg/plan"
+	"github.com/supabase/atlasctl/pkg/snapshot"
 )
 
 // testAPIKey is a valid UUID used as a fake API key in tests that require one.

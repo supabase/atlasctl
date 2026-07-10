@@ -5,9 +5,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/supabase/atlascli/pkg/config"
-	"github.com/supabase/atlascli/pkg/selection"
-	"github.com/supabase/atlascli/pkg/snapshot"
+	"github.com/supabase/atlasctl/pkg/config"
+	"github.com/supabase/atlasctl/pkg/selection"
+	"github.com/supabase/atlasctl/pkg/snapshot"
 )
 
 func newSelectCmd(f *globalFlags, _ Deps) *cobra.Command {

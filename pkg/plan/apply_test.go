@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/supabase/atlascli/pkg/plan"
+	"github.com/supabase/atlasctl/pkg/plan"
 )
 
 // nopLog discards all log output in tests.

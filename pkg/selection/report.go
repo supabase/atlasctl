@@ -8,7 +8,7 @@ import (
 
 	h3 "github.com/ThingsIXFoundation/h3-light"
 
-	"github.com/supabase/atlascli/pkg/config"
+	"github.com/supabase/atlasctl/pkg/config"
 )
 
 // CoverageReport summarises the geographic and network diversity of a set of

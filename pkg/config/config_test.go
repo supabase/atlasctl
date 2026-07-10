@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/supabase/atlascli/pkg/config"
+	"github.com/supabase/atlasctl/pkg/config"
 )
 
 // writeTemp writes yaml content to a temp file and returns its path.

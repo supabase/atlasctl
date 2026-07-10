@@ -6,7 +6,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/spf13/cobra"
 
-	"github.com/supabase/atlascli/pkg/snapshot"
+	"github.com/supabase/atlasctl/pkg/snapshot"
 )
 
 func newRefreshCmd(f *globalFlags, deps Deps) *cobra.Command {

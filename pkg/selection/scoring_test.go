@@ -5,9 +5,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/supabase/atlascli/pkg/config"
-	"github.com/supabase/atlascli/pkg/selection"
-	"github.com/supabase/atlascli/pkg/snapshot"
+	"github.com/supabase/atlasctl/pkg/config"
+	"github.com/supabase/atlasctl/pkg/selection"
+	"github.com/supabase/atlasctl/pkg/snapshot"
 )
 
 // referenceScoringConfig returns the scoring config from the design docs,

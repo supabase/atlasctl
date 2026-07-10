@@ -6,8 +6,8 @@ import (
 	"encoding/binary"
 	"hash/fnv"
 
-	"github.com/supabase/atlascli/pkg/config"
-	"github.com/supabase/atlascli/pkg/snapshot"
+	"github.com/supabase/atlasctl/pkg/config"
+	"github.com/supabase/atlasctl/pkg/snapshot"
 )
 
 // Band represents a score tier used for deterministic probe ordering.

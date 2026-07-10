@@ -1,7 +1,7 @@
 package plan
 
 import (
-	"github.com/supabase/atlascli/pkg/config"
+	"github.com/supabase/atlasctl/pkg/config"
 )
 
 // CreditLine is the credit burn breakdown for one (measurement, round) pair.
