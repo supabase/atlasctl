@@ -9,7 +9,7 @@ import (
 
 	goat "github.com/robert-kisteleki/goat"
 
-	"github.com/supabase/atlascli/pkg/snapshot"
+	"github.com/supabase/atlasctl/pkg/snapshot"
 )
 
 // ProbeClient implements snapshot.Client using the goat library.

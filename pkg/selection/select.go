@@ -7,8 +7,8 @@ import (
 
 	h3 "github.com/ThingsIXFoundation/h3-light"
 
-	"github.com/supabase/atlascli/pkg/config"
-	"github.com/supabase/atlascli/pkg/snapshot"
+	"github.com/supabase/atlasctl/pkg/config"
+	"github.com/supabase/atlasctl/pkg/snapshot"
 )
 
 // SelectedRound is the output of one round of probe selection.

@@ -5,7 +5,7 @@ import (
 	"io"
 	"text/tabwriter"
 
-	"github.com/supabase/atlascli/pkg/plan"
+	"github.com/supabase/atlasctl/pkg/plan"
 )
 
 // printCreditEstimate writes a per-(measurement, round) credit burn table and

@@ -7,7 +7,7 @@ import (
 	"github.com/google/uuid"
 	goat "github.com/robert-kisteleki/goat"
 
-	"github.com/supabase/atlascli/pkg/plan"
+	"github.com/supabase/atlasctl/pkg/plan"
 )
 
 // MsmClient implements plan.MsmClient using the goat library.

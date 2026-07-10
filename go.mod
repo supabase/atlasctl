@@ -1,4 +1,4 @@
-module github.com/supabase/atlascli
+module github.com/supabase/atlasctl
 
 go 1.26.2
 

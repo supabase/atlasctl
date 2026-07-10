@@ -8,10 +8,10 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/spf13/cobra"
 
-	"github.com/supabase/atlascli/pkg/config"
-	"github.com/supabase/atlascli/pkg/plan"
-	"github.com/supabase/atlascli/pkg/selection"
-	"github.com/supabase/atlascli/pkg/snapshot"
+	"github.com/supabase/atlasctl/pkg/config"
+	"github.com/supabase/atlasctl/pkg/plan"
+	"github.com/supabase/atlasctl/pkg/selection"
+	"github.com/supabase/atlasctl/pkg/snapshot"
 )
 
 func newApplyCmd(f *globalFlags, deps Deps) *cobra.Command {
@@ -69,7 +69,7 @@ func newApplyCmd(f *globalFlags, deps Deps) *cobra.Command {
 			if !dryRun && !yes {
 				fmt.Fprint(cmd.OutOrStdout(), "\nApply changes? [y/N] ")
 				var response string
-				fmt.Fscan(cmd.InOrStdin(), &response)
+				_, _ = fmt.Fscan(cmd.InOrStdin(), &response)
 				if strings.ToLower(strings.TrimSpace(response)) != "y" {
 					fmt.Fprintln(cmd.OutOrStdout(), "Aborted.")
 					return nil

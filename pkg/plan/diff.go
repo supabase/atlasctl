@@ -1,8 +1,8 @@
 package plan
 
 import (
-	"github.com/supabase/atlascli/pkg/config"
-	"github.com/supabase/atlascli/pkg/selection"
+	"github.com/supabase/atlasctl/pkg/config"
+	"github.com/supabase/atlasctl/pkg/selection"
 )
 
 // MsmKey uniquely identifies a measurement within atlasctl as the pair

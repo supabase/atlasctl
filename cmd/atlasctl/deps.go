@@ -3,9 +3,9 @@ package main
 import (
 	"github.com/google/uuid"
 
-	"github.com/supabase/atlascli/internal/goatadapter"
-	"github.com/supabase/atlascli/pkg/plan"
-	"github.com/supabase/atlascli/pkg/snapshot"
+	"github.com/supabase/atlasctl/internal/goatadapter"
+	"github.com/supabase/atlasctl/pkg/plan"
+	"github.com/supabase/atlasctl/pkg/snapshot"
 )
 
 // Deps bundles the factory functions used to construct API clients. Callers
