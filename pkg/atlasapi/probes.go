@@ -1,7 +1,7 @@
-// Package goatadapter adapts the goat library to the interfaces defined in pkg/.
-// It is the only place in the codebase that imports github.com/robert-kisteleki/goat,
-// keeping pkg/ free of that dependency and fully testable with fakes.
-package goatadapter
+// Package atlasapi implements the snapshot.Client and plan.ApplyClient
+// interfaces against the live RIPE Atlas API. It is the only package in
+// atlasctl that imports the underlying Atlas library.
+package atlasapi
 
 import (
 	"context"
@@ -12,28 +12,27 @@ import (
 	"github.com/supabase/atlasctl/pkg/snapshot"
 )
 
-// ProbeClient implements snapshot.Client using the goat library.
+// ProbeClient implements snapshot.Client using the RIPE Atlas API.
 type ProbeClient struct {
-	// Verbose enables goat's HTTP-level debug logging.
+	// Verbose enables HTTP-level debug logging.
 	Verbose bool
 }
 
-// FetchProbes fetches all connected IPv4-capable probes from the RIPE Atlas API.
+// FetchProbes fetches all connected probes from the RIPE Atlas API.
 //
 // Context cancellation is checked between probe results. Because the underlying
-// goat HTTP calls do not accept a context, an in-flight page request will still
+// HTTP calls do not accept a context, an in-flight page request will still
 // complete after cancellation — only the iteration stops early.
 //
-// goat quirk: ProbeFilter.limit=0 (the zero default) causes the loop to exit
-// after the very first probe because the guard is `total >= limit` and 1>=0 is
-// true. We therefore always set limit to ^uint(0) (MaxUint) to mean "unlimited".
+// API quirk: limit=0 (the zero default) causes the loop to exit after the very
+// first probe because the guard is `total >= limit` and 1>=0 is true. We
+// therefore always set limit to ^uint(0) (MaxUint) to mean "unlimited".
 func (c *ProbeClient) FetchProbes(ctx context.Context) ([]snapshot.Probe, error) {
 	filter := goat.NewProbeFilter()
 	filter.FilterStatus(goat.ProbeStatusConnected)
 	filter.Verbose(c.Verbose)
-	filter.Limit(^uint(0)) // see godoc above
+	filter.Limit(^uint(0))
 
-	// Buffer the channel so the goroutine is less likely to block if we exit early.
 	ch := make(chan goat.AsyncProbeResult, 256)
 	go filter.GetProbes(ch)
 
@@ -56,9 +55,8 @@ func (c *ProbeClient) FetchProbes(ctx context.Context) ([]snapshot.Probe, error)
 	}
 }
 
-// toProbe converts a goat.Probe to a snapshot.Probe.
-// Returns nil for probes that lack an IPv4 ASN or valid coordinates,
-// since both are required for scoring and selection.
+// toProbe converts an API probe to a snapshot.Probe.
+// Returns nil for probes that lack an IPv4 ASN or valid coordinates.
 func toProbe(g goat.Probe) *snapshot.Probe {
 	if g.ASN4 == nil {
 		return nil

@@ -23,8 +23,7 @@ type MsmInfo struct {
 }
 
 // MsmClient is the interface through which pkg/plan accesses the RIPE Atlas
-// measurements API. It is implemented by a goat adapter in internal/goatadapter
-// and by FakeMsmClient for tests.
+// measurements API. It is implemented by pkg/atlasapi and by FakeMsmClient for tests.
 type MsmClient interface {
 	// GetMeasurement returns live info for one measurement by ID.
 	// Returns ErrMsmNotFound if no measurement with that ID exists.

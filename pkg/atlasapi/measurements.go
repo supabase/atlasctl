@@ -1,4 +1,4 @@
-package goatadapter
+package atlasapi
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 	"github.com/supabase/atlasctl/pkg/plan"
 )
 
-// MsmClient implements plan.MsmClient using the goat library.
+// MsmClient implements plan.MsmClient using the RIPE Atlas API.
 type MsmClient struct {
 	APIKey   *uuid.UUID
 	Verbose  bool
@@ -33,11 +33,10 @@ func (c *MsmClient) GetMeasurement(ctx context.Context, id uint64) (plan.MsmInfo
 	return toMsmInfo(*msm), nil
 }
 
-// ListMyMeasurements returns all ongoing measurements owned by the API key whose
-// description contains the atlasctl tag prefix.
+// ListMyMeasurements returns all ongoing measurements owned by the API key
+// whose description contains the atlasctl tag prefix.
 //
-// goat quirk: limit=0 exits after the first result (see probe adapter for
-// explanation). We always set limit to ^uint(0) (MaxUint).
+// API quirk: limit=0 exits after the first result. Always set to ^uint(0).
 func (c *MsmClient) ListMyMeasurements(ctx context.Context) ([]plan.MsmInfo, error) {
 	filter := goat.NewMeasurementFilter()
 	filter.FilterMy()
@@ -45,7 +44,7 @@ func (c *MsmClient) ListMyMeasurements(ctx context.Context) ([]plan.MsmInfo, err
 	filter.FilterDescriptionHas(c.TagCodec.Prefix())
 	filter.ApiKey(c.APIKey)
 	filter.Verbose(c.Verbose)
-	filter.Limit(^uint(0)) // see godoc on ProbeClient.FetchProbes
+	filter.Limit(^uint(0))
 
 	ch := make(chan goat.AsyncMeasurementResult, 64)
 	go filter.GetMeasurements(ch)
