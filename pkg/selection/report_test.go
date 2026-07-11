@@ -186,5 +186,26 @@ func TestReport_Format(t *testing.T) {
 	assert.True(t, strings.Contains(text, "US:"), "country in text")
 	assert.True(t, strings.Contains(text, "resolution 3:"), "H3 resolution in text")
 	assert.True(t, strings.Contains(text, "A:"), "band A in text")
+	assert.True(t, strings.Contains(text, "Score distribution:"), "score distribution section in text")
+	assert.True(t, strings.Contains(text, "min:"), "min score in text")
+	assert.True(t, strings.Contains(text, "median:"), "median score in text")
+	assert.True(t, strings.Contains(text, "max:"), "max score in text")
+}
+
+func TestReport_ScoreStats(t *testing.T) {
+	probes := knownProbes()
+	rounds := buildSingleRound(t, probes)
+	report := selection.Report(rounds, knownScoringCfg())
+
+	// US probes: 1+10+1+5+2+5 = 24, BR probes: 1+8+5+1 = 15, DE probes: 1+2 = 3
+	assert.Equal(t, 3, report.Scores.Min, "min score should be DE probes (score 3)")
+	assert.Equal(t, 24, report.Scores.Max, "max score should be US probes (score 24)")
+	assert.Greater(t, report.Scores.Median, report.Scores.Min, "median should be above min")
+	assert.LessOrEqual(t, report.Scores.Median, report.Scores.Max, "median should be at or below max")
+}
+
+func TestReport_ScoreStats_Empty(t *testing.T) {
+	report := selection.Report(nil, config.ScoringConfig{})
+	assert.Equal(t, selection.ScoreStats{}, report.Scores, "empty rounds should produce zero ScoreStats")
 }
 
