@@ -4,7 +4,7 @@ import (
 	"github.com/supabase/atlasctl/pkg/config"
 )
 
-// CreditLine is the credit burn breakdown for one (measurement, round) pair.
+// CreditLine is the credit burn breakdown for one (measurement, cohort) pair.
 type CreditLine struct {
 	Key          MsmKey
 	Type         MsmType
@@ -15,15 +15,15 @@ type CreditLine struct {
 
 // CreditEstimate is the projected credit burn across all desired measurements.
 type CreditEstimate struct {
-	Lines   []CreditLine
-	Daily   int64
-	Weekly  int64
+	Lines  []CreditLine
+	Daily  int64
+	Weekly int64
 }
 
 // EstimateCredits computes the projected daily and weekly RIPE Atlas credit
 // burn for a desired state map, as returned by DesiredState.
 //
-// The formula per (measurement, round):
+// The formula per (measurement, cohort):
 //
 //	credits/day = probe_count × credits_per_result(type) × (86400 / interval_seconds)
 //

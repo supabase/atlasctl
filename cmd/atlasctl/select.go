@@ -31,24 +31,24 @@ func newSelectCmd(f *globalFlags, _ Deps) *cobra.Command {
 				return err
 			}
 
-			rounds, err := selection.Select(ctx, snap, *cfg)
+			cohorts, err := selection.Select(ctx, snap, *cfg)
 			if err != nil {
 				return err
 			}
 
-			data, err := selection.GeoJSON(rounds)
+			data, err := selection.GeoJSON(cohorts)
 			if err != nil {
 				return err
 			}
 
 			if geojsonLink {
-				for _, r := range rounds {
-					roundData, err := selection.GeoJSONRound(r)
+				for _, r := range cohorts {
+					cohortData, err := selection.GeoJSONCohort(r)
 					if err != nil {
 						return err
 					}
-					link := "https://geojson.io/#data=data:application/json," + url.QueryEscape(string(roundData))
-					fmt.Fprintf(cmd.OutOrStdout(), "%s: %s\n", r.Round.Name, link)
+					link := "https://geojson.io/#data=data:application/json," + url.QueryEscape(string(cohortData))
+					fmt.Fprintf(cmd.OutOrStdout(), "%s: %s\n", r.Cohort.Name, link)
 				}
 				return nil
 			}
@@ -57,7 +57,7 @@ func newSelectCmd(f *globalFlags, _ Deps) *cobra.Command {
 			case "geojson":
 				fmt.Fprintln(cmd.OutOrStdout(), string(data))
 			default:
-				report := selection.Report(rounds, cfg.Scoring)
+				report := selection.Report(cohorts, cfg.Scoring)
 				fmt.Fprintln(cmd.OutOrStdout(), report.Format())
 			}
 			return nil

@@ -29,7 +29,7 @@ func TestLoad_ValidFixture(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, cfg)
 
-	assert.Len(t, cfg.Rounds, 3)
+	assert.Len(t, cfg.Cohorts, 3)
 	assert.Len(t, cfg.Measurements, 3)
 	assert.Equal(t, 3, cfg.GeoDiversity.H3Resolution)
 	assert.Equal(t, 10, cfg.Scoring.ASN[7018])
@@ -49,16 +49,16 @@ func TestLoad_MissingFile(t *testing.T) {
 func TestLoad(t *testing.T) {
 	// minimalValid is the smallest possible valid config — used as a base for error cases.
 	const minimalValid = `
-rounds:
+cohorts:
   - name: fast
-    count: 10
+    probe_count: 10
     interval_seconds: 60
     max_probes_per_cell: 1
 measurements:
   - name: dns-test
     type: dns
     target: example.com
-    rounds: [fast]
+    cohorts: [fast]
 `
 	tests := []struct {
 		name        string
@@ -75,54 +75,54 @@ measurements:
 			},
 		},
 		{
-			name:        "no rounds",
-			yaml:        `measurements: [{name: m, type: dns, target: x.com, rounds: [r]}]`,
+			name:        "no cohorts",
+			yaml:        `measurements: [{name: m, type: dns, target: x.com, cohorts: [r]}]`,
 			wantErr:     true,
-			errContains: "at least one round",
+			errContains: "at least one cohort",
 		},
 		{
 			name:    "no measurements",
-			yaml:    `rounds: [{name: r, count: 10, interval_seconds: 60, max_probes_per_cell: 1}]`,
+			yaml:    `cohorts: [{name: r, probe_count: 10, interval_seconds: 60, max_probes_per_cell: 1}]`,
 			wantErr: false,
 		},
 		{
-			name: "duplicate round names",
+			name: "duplicate cohort names",
 			yaml: `
-rounds:
+cohorts:
   - name: r1
-    count: 10
+    probe_count: 10
     interval_seconds: 60
     max_probes_per_cell: 1
   - name: r1
-    count: 20
+    probe_count: 20
     interval_seconds: 120
     max_probes_per_cell: 2
 measurements:
   - name: m
     type: dns
     target: x.com
-    rounds: [r1]
+    cohorts: [r1]
 `,
 			wantErr:     true,
-			errContains: `duplicate round name "r1"`,
+			errContains: `duplicate cohort name "r1"`,
 		},
 		{
 			name: "duplicate measurement names",
 			yaml: `
-rounds:
+cohorts:
   - name: r1
-    count: 10
+    probe_count: 10
     interval_seconds: 60
     max_probes_per_cell: 1
 measurements:
   - name: m
     type: dns
     target: x.com
-    rounds: [r1]
+    cohorts: [r1]
   - name: m
     type: ping
     target: x.com
-    rounds: [r1]
+    cohorts: [r1]
 `,
 			wantErr:     true,
 			errContains: `duplicate measurement name "m"`,
@@ -130,16 +130,16 @@ measurements:
 		{
 			name: "zero interval_seconds",
 			yaml: `
-rounds:
+cohorts:
   - name: r
-    count: 10
+    probe_count: 10
     interval_seconds: 0
     max_probes_per_cell: 1
 measurements:
   - name: m
     type: dns
     target: x.com
-    rounds: [r]
+    cohorts: [r]
 `,
 			wantErr:     true,
 			errContains: "interval_seconds must be positive",
@@ -147,50 +147,50 @@ measurements:
 		{
 			name: "negative interval_seconds",
 			yaml: `
-rounds:
+cohorts:
   - name: r
-    count: 10
+    probe_count: 10
     interval_seconds: -60
     max_probes_per_cell: 1
 measurements:
   - name: m
     type: dns
     target: x.com
-    rounds: [r]
+    cohorts: [r]
 `,
 			wantErr:     true,
 			errContains: "interval_seconds must be positive",
 		},
 		{
-			name: "zero count",
+			name: "zero probe_count",
 			yaml: `
-rounds:
+cohorts:
   - name: r
-    count: 0
+    probe_count: 0
     interval_seconds: 60
     max_probes_per_cell: 1
 measurements:
   - name: m
     type: dns
     target: x.com
-    rounds: [r]
+    cohorts: [r]
 `,
 			wantErr:     true,
-			errContains: "count must be positive",
+			errContains: "probe_count must be positive",
 		},
 		{
 			name: "zero max_probes_per_cell",
 			yaml: `
-rounds:
+cohorts:
   - name: r
-    count: 10
+    probe_count: 10
     interval_seconds: 60
     max_probes_per_cell: 0
 measurements:
   - name: m
     type: dns
     target: x.com
-    rounds: [r]
+    cohorts: [r]
 `,
 			wantErr:     true,
 			errContains: "max_probes_per_cell must be positive",
@@ -198,59 +198,59 @@ measurements:
 		{
 			name: "unknown measurement type",
 			yaml: `
-rounds:
+cohorts:
   - name: r
-    count: 10
+    probe_count: 10
     interval_seconds: 60
     max_probes_per_cell: 1
 measurements:
   - name: m
     type: http
     target: x.com
-    rounds: [r]
+    cohorts: [r]
 `,
 			wantErr:     true,
 			errContains: `unknown type "http"`,
 		},
 		{
-			name: "measurement references unknown round",
+			name: "measurement references unknown cohort",
 			yaml: `
-rounds:
+cohorts:
   - name: r
-    count: 10
+    probe_count: 10
     interval_seconds: 60
     max_probes_per_cell: 1
 measurements:
   - name: m
     type: dns
     target: x.com
-    rounds: [r, nonexistent]
+    cohorts: [r, nonexistent]
 `,
 			wantErr:     true,
-			errContains: `unknown round "nonexistent"`,
+			errContains: `unknown cohort "nonexistent"`,
 		},
 		{
 			name: "measurement missing target",
 			yaml: `
-rounds:
+cohorts:
   - name: r
-    count: 10
+    probe_count: 10
     interval_seconds: 60
     max_probes_per_cell: 1
 measurements:
   - name: m
     type: dns
-    rounds: [r]
+    cohorts: [r]
 `,
 			wantErr:     true,
 			errContains: "target is required",
 		},
 		{
-			name: "measurement missing rounds list",
+			name: "measurement missing cohorts list",
 			yaml: `
-rounds:
+cohorts:
   - name: r
-    count: 10
+    probe_count: 10
     interval_seconds: 60
     max_probes_per_cell: 1
 measurements:
@@ -259,21 +259,21 @@ measurements:
     target: x.com
 `,
 			wantErr:     true,
-			errContains: "at least one round reference",
+			errContains: "at least one cohort reference",
 		},
 		{
 			name: "h3_resolution out of range high",
 			yaml: `
-rounds:
+cohorts:
   - name: r
-    count: 10
+    probe_count: 10
     interval_seconds: 60
     max_probes_per_cell: 1
 measurements:
   - name: m
     type: dns
     target: x.com
-    rounds: [r]
+    cohorts: [r]
 geo_diversity:
   h3_resolution: 16
 `,
@@ -283,16 +283,16 @@ geo_diversity:
 		{
 			name: "city density_coefficient between 0 and 1 is valid",
 			yaml: `
-rounds:
+cohorts:
   - name: r
-    count: 10
+    probe_count: 10
     interval_seconds: 60
     max_probes_per_cell: 1
 measurements:
   - name: m
     type: dns
     target: x.com
-    rounds: [r]
+    cohorts: [r]
 cities:
   - name: Ashburn
     lat: 39.04
@@ -305,16 +305,16 @@ cities:
 		{
 			name: "city density_coefficient zero is invalid",
 			yaml: `
-rounds:
+cohorts:
   - name: r
-    count: 10
+    probe_count: 10
     interval_seconds: 60
     max_probes_per_cell: 1
 measurements:
   - name: m
     type: dns
     target: x.com
-    rounds: [r]
+    cohorts: [r]
 cities:
   - name: Ashburn
     lat: 39.04
@@ -328,16 +328,16 @@ cities:
 		{
 			name: "city missing radius_km",
 			yaml: `
-rounds:
+cohorts:
   - name: r
-    count: 10
+    probe_count: 10
     interval_seconds: 60
     max_probes_per_cell: 1
 measurements:
   - name: m
     type: dns
     target: x.com
-    rounds: [r]
+    cohorts: [r]
 cities:
   - name: Ashburn
     lat: 39.04
@@ -350,28 +350,28 @@ cities:
 		{
 			name: "all measurement types accepted",
 			yaml: `
-rounds:
+cohorts:
   - name: r
-    count: 10
+    probe_count: 10
     interval_seconds: 60
     max_probes_per_cell: 1
 measurements:
   - name: m-dns
     type: dns
     target: x.com
-    rounds: [r]
+    cohorts: [r]
   - name: m-ping
     type: ping
     target: 1.2.3.4
-    rounds: [r]
+    cohorts: [r]
   - name: m-tls
     type: tls
     target: x.com
-    rounds: [r]
+    cohorts: [r]
   - name: m-trace
     type: traceroute
     target: 1.2.3.4
-    rounds: [r]
+    cohorts: [r]
 `,
 			check: func(t *testing.T, cfg *config.Config) {
 				assert.Len(t, cfg.Measurements, 4)

@@ -39,11 +39,11 @@ func newPlanCmd(f *globalFlags, deps Deps) *cobra.Command {
 				state = plan.NewStateFile()
 			}
 
-			rounds, err := selection.Select(ctx, snap, *cfg)
+			cohorts, err := selection.Select(ctx, snap, *cfg)
 			if err != nil {
 				return err
 			}
-			desired := plan.DesiredState(*cfg, rounds)
+			desired := plan.DesiredState(*cfg, cohorts)
 
 			apiKey, err := resolveAPIKey(f.APIKey)
 			if err != nil {

@@ -17,9 +17,9 @@ var ErrStateNotFound = errors.New("state file not found")
 
 // StateFile is the on-disk record of all measurements managed by atlasctl.
 // It is the source of truth for which RIPE Atlas measurement IDs correspond to
-// which (measurement name, round) pairs.
+// which (measurement name, cohort) pairs.
 type StateFile struct {
-	// Measurements is keyed by measurement name, then round name.
+	// Measurements is keyed by measurement name, then cohort name.
 	Measurements         map[string]map[string]MsmRecord `yaml:"measurements"`
 	LastApplied          time.Time                       `yaml:"last_applied,omitempty"`
 	ProbeSnapshot        string                          `yaml:"probe_snapshot,omitempty"`
@@ -42,32 +42,32 @@ func NewStateFile() StateFile {
 	return StateFile{Measurements: make(map[string]map[string]MsmRecord)}
 }
 
-// GetRecord returns the MsmRecord for (name, round) and whether it exists.
-func (sf StateFile) GetRecord(name, round string) (MsmRecord, bool) {
-	rounds, ok := sf.Measurements[name]
+// GetRecord returns the MsmRecord for (name, cohort) and whether it exists.
+func (sf StateFile) GetRecord(name, cohort string) (MsmRecord, bool) {
+	cohorts, ok := sf.Measurements[name]
 	if !ok {
 		return MsmRecord{}, false
 	}
-	rec, ok := rounds[round]
+	rec, ok := cohorts[cohort]
 	return rec, ok
 }
 
-// SetRecord stores rec under (name, round), creating the outer map entry if needed.
-func (sf *StateFile) SetRecord(name, round string, rec MsmRecord) {
+// SetRecord stores rec under (name, cohort), creating the outer map entry if needed.
+func (sf *StateFile) SetRecord(name, cohort string, rec MsmRecord) {
 	if sf.Measurements == nil {
 		sf.Measurements = make(map[string]map[string]MsmRecord)
 	}
 	if sf.Measurements[name] == nil {
 		sf.Measurements[name] = make(map[string]MsmRecord)
 	}
-	sf.Measurements[name][round] = rec
+	sf.Measurements[name][cohort] = rec
 }
 
-// DeleteRecord removes the (name, round) entry, cleaning up the outer map if empty.
-func (sf *StateFile) DeleteRecord(name, round string) {
-	if rounds, ok := sf.Measurements[name]; ok {
-		delete(rounds, round)
-		if len(rounds) == 0 {
+// DeleteRecord removes the (name, cohort) entry, cleaning up the outer map if empty.
+func (sf *StateFile) DeleteRecord(name, cohort string) {
+	if cohorts, ok := sf.Measurements[name]; ok {
+		delete(cohorts, cohort)
+		if len(cohorts) == 0 {
 			delete(sf.Measurements, name)
 		}
 	}

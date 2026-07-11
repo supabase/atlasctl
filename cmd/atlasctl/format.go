@@ -16,7 +16,7 @@ func printCreditEstimate(w io.Writer, est plan.CreditEstimate) {
 	fmt.Fprintln(tw, "NAME\tROUND\tTYPE\tPROBES\tINTERVAL\tPER DAY")
 	for _, l := range est.Lines {
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%ds\t%d\n",
-			l.Key.Name, l.Key.Round, l.Type, l.ProbeCount, l.IntervalSecs, l.PerDay)
+			l.Key.Name, l.Key.Cohort, l.Type, l.ProbeCount, l.IntervalSecs, l.PerDay)
 	}
 	_ = tw.Flush()
 	fmt.Fprintf(w, "Total: %d/day  %d/week\n", est.Daily, est.Weekly)
@@ -28,7 +28,7 @@ func printChangeset(w io.Writer, cs plan.Changeset) {
 	fmt.Fprintln(tw, "KIND\tNAME\tROUND\tDETAILS")
 	for _, ch := range cs {
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n",
-			ch.Kind, ch.Key.Name, ch.Key.Round, changeDetails(ch))
+			ch.Kind, ch.Key.Name, ch.Key.Cohort, changeDetails(ch))
 	}
 	_ = tw.Flush()
 }
@@ -42,7 +42,7 @@ func printWarnings(w io.Writer, warnings []plan.DriftWarning) {
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	for _, warn := range warnings {
 		fmt.Fprintf(tw, "  %s\t%s\t%s\tid=%d\t%s\n",
-			warn.Kind, warn.Key.Name, warn.Key.Round, warn.MsmID, warn.Message)
+			warn.Kind, warn.Key.Name, warn.Key.Cohort, warn.MsmID, warn.Message)
 	}
 	_ = tw.Flush()
 }

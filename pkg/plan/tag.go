@@ -11,7 +11,7 @@ const DefaultTagPrefix = "[atlasctl:"
 // TagCodec encodes and decodes atlasctl description tags using a configurable
 // prefix. The tag format is:
 //
-//	<prefix><name>:<round>]
+//	<prefix><name>:<cohort>]
 //
 // Changing the prefix after measurements have been created is a breaking
 // operation — existing measurements will appear as orphans during drift
@@ -33,17 +33,17 @@ func NewTagCodec(prefix string) TagCodec {
 // Prefix returns the raw prefix string, useful for API filter calls.
 func (tc TagCodec) Prefix() string { return tc.prefix }
 
-// Format produces the description tag for a (name, round) pair.
-func (tc TagCodec) Format(name, round string) string {
-	return fmt.Sprintf("%s%s:%s]", tc.prefix, name, round)
+// Format produces the description tag for a (name, cohort) pair.
+func (tc TagCodec) Format(name, cohort string) string {
+	return fmt.Sprintf("%s%s:%s]", tc.prefix, name, cohort)
 }
 
-// Parse extracts the (name, round) pair from a string that may contain an
+// Parse extracts the (name, cohort) pair from a string that may contain an
 // atlasctl description tag. The tag may appear anywhere in the string.
 //
 // Returns ok=false if the prefix is absent, the closing "]" is missing, or
-// name or round would be empty.
-func (tc TagCodec) Parse(desc string) (name, round string, ok bool) {
+// name or cohort would be empty.
+func (tc TagCodec) Parse(desc string) (name, cohort string, ok bool) {
 	start := strings.Index(desc, tc.prefix)
 	if start == -1 {
 		return "", "", false
@@ -56,9 +56,9 @@ func (tc TagCodec) Parse(desc string) (name, round string, ok bool) {
 		return "", "", false
 	}
 
-	inner := rest[:end] // "<name>:<round>"
+	inner := rest[:end] // "<name>:<cohort>"
 
-	// Split on the first colon only so round names may contain colons.
+	// Split on the first colon only so cohort names may contain colons.
 	sep := strings.Index(inner, ":")
 	if sep <= 0 || sep == len(inner)-1 {
 		return "", "", false
@@ -69,12 +69,12 @@ func (tc TagCodec) Parse(desc string) (name, round string, ok bool) {
 
 // FormatTag is a package-level convenience using DefaultTagPrefix.
 // Prefer TagCodec.Format when a configured prefix is available.
-func FormatTag(name, round string) string {
-	return NewTagCodec("").Format(name, round)
+func FormatTag(name, cohort string) string {
+	return NewTagCodec("").Format(name, cohort)
 }
 
 // ParseTag is a package-level convenience using DefaultTagPrefix.
 // Prefer TagCodec.Parse when a configured prefix is available.
-func ParseTag(desc string) (name, round string, ok bool) {
+func ParseTag(desc string) (name, cohort string, ok bool) {
 	return NewTagCodec("").Parse(desc)
 }

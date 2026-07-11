@@ -46,12 +46,13 @@ func sortedU32(ids []uint32) []uint32 {
 
 // sampleState builds a StateFile with one or more measurement records.
 func sampleState(entries ...struct {
-	name, round string
-	rec         plan.MsmRecord
-}) plan.StateFile {
+	name, cohort string
+	rec          plan.MsmRecord
+},
+) plan.StateFile {
 	sf := plan.NewStateFile()
 	for _, e := range entries {
-		sf.SetRecord(e.name, e.round, e.rec)
+		sf.SetRecord(e.name, e.cohort, e.rec)
 	}
 	return sf
 }
@@ -99,12 +100,12 @@ func TestSaveLoad_RoundTrip(t *testing.T) {
 	assert.Equal(t, original.ProbeSnapshot, loaded.ProbeSnapshot)
 
 	for _, name := range []string{"dns-canary", "tls-canary"} {
-		for _, round := range []string{"high-freq", "mid-freq"} {
-			orig, origOK := original.GetRecord(name, round)
-			got, gotOK := loaded.GetRecord(name, round)
-			require.Equal(t, origOK, gotOK, "GetRecord(%s, %s) existence", name, round)
+		for _, cohort := range []string{"high-freq", "mid-freq"} {
+			orig, origOK := original.GetRecord(name, cohort)
+			got, gotOK := loaded.GetRecord(name, cohort)
+			require.Equal(t, origOK, gotOK, "GetRecord(%s, %s) existence", name, cohort)
 			if origOK {
-				assert.Equal(t, orig.MsmID, got.MsmID, "MsmID for (%s, %s)", name, round)
+				assert.Equal(t, orig.MsmID, got.MsmID, "MsmID for (%s, %s)", name, cohort)
 				assert.Equal(t, orig.Target, got.Target)
 				assert.Equal(t, orig.Type, got.Type)
 				assert.Equal(t, orig.Interval, got.Interval)
@@ -132,14 +133,14 @@ func TestStateFile_SetDeleteRecord(t *testing.T) {
 	_, ok = sf.GetRecord("m", "r")
 	assert.False(t, ok, "record should be gone after DeleteRecord")
 
-	// Deleting the last round should remove the outer map entry too.
-	assert.Empty(t, sf.Measurements, "outer map should be empty after last round removed")
+	// Deleting the last cohort should remove the outer map entry too.
+	assert.Empty(t, sf.Measurements, "outer map should be empty after last cohort removed")
 }
 
 // ── diff ──────────────────────────────────────────────────────────────────────
 
 func TestDiff_Create(t *testing.T) {
-	key := plan.MsmKey{Name: "dns-canary", Round: "high-freq"}
+	key := plan.MsmKey{Name: "dns-canary", Cohort: "high-freq"}
 	desired := map[plan.MsmKey]plan.DesiredMsm{
 		key: {Target: "canary.supabase.co", Type: plan.MsmTypeDNS, Interval: 60, ProbeIDs: []uint32{1, 2, 3}},
 	}
@@ -152,15 +153,15 @@ func TestDiff_Create(t *testing.T) {
 }
 
 func TestDiff_NoOp(t *testing.T) {
-	key := plan.MsmKey{Name: "dns-canary", Round: "high-freq"}
+	key := plan.MsmKey{Name: "dns-canary", Cohort: "high-freq"}
 	probes := []uint32{1001, 2002, 3003}
 
 	desired := map[plan.MsmKey]plan.DesiredMsm{
 		key: {Target: "canary.supabase.co", Type: plan.MsmTypeDNS, Interval: 60, ProbeIDs: probes},
 	}
 	state := sampleState(struct {
-		name, round string
-		rec         plan.MsmRecord
+		name, cohort string
+		rec          plan.MsmRecord
 	}{"dns-canary", "high-freq", plan.MsmRecord{
 		MsmID: 12345678, Target: "canary.supabase.co", Type: "dns",
 		Interval: 60, ProbeIDs: probes,
@@ -173,10 +174,10 @@ func TestDiff_NoOp(t *testing.T) {
 }
 
 func TestDiff_Stop(t *testing.T) {
-	key := plan.MsmKey{Name: "dns-canary", Round: "high-freq"}
+	key := plan.MsmKey{Name: "dns-canary", Cohort: "high-freq"}
 	state := sampleState(struct {
-		name, round string
-		rec         plan.MsmRecord
+		name, cohort string
+		rec          plan.MsmRecord
 	}{"dns-canary", "high-freq", dnsRecord(99999999, 1, 2, 3)})
 
 	// Empty desired — everything in state should be stopped.
@@ -187,15 +188,15 @@ func TestDiff_Stop(t *testing.T) {
 }
 
 func TestDiff_ProbeSetChanged(t *testing.T) {
-	key := plan.MsmKey{Name: "dns-canary", Round: "high-freq"}
+	key := plan.MsmKey{Name: "dns-canary", Cohort: "high-freq"}
 
 	desired := map[plan.MsmKey]plan.DesiredMsm{
 		// Remove 1, keep 2+3, add 4.
 		key: {Target: "canary.supabase.co", Type: plan.MsmTypeDNS, Interval: 60, ProbeIDs: []uint32{2, 3, 4}},
 	}
 	state := sampleState(struct {
-		name, round string
-		rec         plan.MsmRecord
+		name, cohort string
+		rec          plan.MsmRecord
 	}{"dns-canary", "high-freq", plan.MsmRecord{
 		MsmID: 12345678, Target: "canary.supabase.co", Type: "dns",
 		Interval: 60, ProbeIDs: []uint32{1, 2, 3},
@@ -217,13 +218,13 @@ func TestDiff_ProbeSetChanged(t *testing.T) {
 }
 
 func TestDiff_ProbeSetAddsOnly(t *testing.T) {
-	key := plan.MsmKey{Name: "ping-edge", Round: "low-freq"}
+	key := plan.MsmKey{Name: "ping-edge", Cohort: "low-freq"}
 	desired := map[plan.MsmKey]plan.DesiredMsm{
 		key: {Target: "1.2.3.4", Type: plan.MsmTypePing, Interval: 900, ProbeIDs: []uint32{1, 2, 3, 4}},
 	}
 	state := sampleState(struct {
-		name, round string
-		rec         plan.MsmRecord
+		name, cohort string
+		rec          plan.MsmRecord
 	}{"ping-edge", "low-freq", plan.MsmRecord{
 		MsmID: 55555, Target: "1.2.3.4", Type: "ping", Interval: 900, ProbeIDs: []uint32{1, 2},
 	}})
@@ -236,15 +237,15 @@ func TestDiff_ProbeSetAddsOnly(t *testing.T) {
 }
 
 func TestDiff_StructuralChange(t *testing.T) {
-	key := plan.MsmKey{Name: "dns-canary", Round: "high-freq"}
+	key := plan.MsmKey{Name: "dns-canary", Cohort: "high-freq"}
 
 	// Interval changed: 60 → 120.
 	desired := map[plan.MsmKey]plan.DesiredMsm{
 		key: {Target: "canary.supabase.co", Type: plan.MsmTypeDNS, Interval: 120, ProbeIDs: []uint32{1, 2}},
 	}
 	state := sampleState(struct {
-		name, round string
-		rec         plan.MsmRecord
+		name, cohort string
+		rec          plan.MsmRecord
 	}{"dns-canary", "high-freq", plan.MsmRecord{
 		MsmID: 12345678, Target: "canary.supabase.co", Type: "dns",
 		Interval: 60, ProbeIDs: []uint32{1, 2},
@@ -265,13 +266,13 @@ func TestDiff_StructuralChange(t *testing.T) {
 }
 
 func TestDiff_StructuralChange_TargetChanged(t *testing.T) {
-	key := plan.MsmKey{Name: "dns-canary", Round: "high-freq"}
+	key := plan.MsmKey{Name: "dns-canary", Cohort: "high-freq"}
 	desired := map[plan.MsmKey]plan.DesiredMsm{
 		key: {Target: "new.supabase.co", Type: plan.MsmTypeDNS, Interval: 60, ProbeIDs: []uint32{1}},
 	}
 	state := sampleState(struct {
-		name, round string
-		rec         plan.MsmRecord
+		name, cohort string
+		rec          plan.MsmRecord
 	}{"dns-canary", "high-freq", dnsRecord(1000, 1)})
 
 	cs := plan.Diff(desired, state)
@@ -282,9 +283,9 @@ func TestDiff_StructuralChange_TargetChanged(t *testing.T) {
 }
 
 func TestDiff_MultipleEntries(t *testing.T) {
-	k1 := plan.MsmKey{Name: "dns-canary", Round: "high-freq"}
-	k2 := plan.MsmKey{Name: "tls-canary", Round: "high-freq"}
-	k3 := plan.MsmKey{Name: "ping-edge", Round: "low-freq"}
+	k1 := plan.MsmKey{Name: "dns-canary", Cohort: "high-freq"}
+	k2 := plan.MsmKey{Name: "tls-canary", Cohort: "high-freq"}
+	k3 := plan.MsmKey{Name: "ping-edge", Cohort: "low-freq"}
 
 	desired := map[plan.MsmKey]plan.DesiredMsm{
 		k1: {Target: "canary.supabase.co", Type: plan.MsmTypeDNS, Interval: 60, ProbeIDs: []uint32{1}},
@@ -293,12 +294,15 @@ func TestDiff_MultipleEntries(t *testing.T) {
 	}
 	state := sampleState(
 		struct {
-			name, round string
-			rec         plan.MsmRecord
-		}{"tls-canary", "high-freq", plan.MsmRecord{MsmID: 2, Target: "canary.supabase.co", Type: "tls", Interval: 60, ProbeIDs: []uint32{1}}},
+			name, cohort string
+			rec          plan.MsmRecord
+		}{"tls-canary", "high-freq", plan.MsmRecord{
+			MsmID: 2, Target: "canary.supabase.co",
+			Type: "tls", Interval: 60, ProbeIDs: []uint32{1},
+		}},
 		struct {
-			name, round string
-			rec         plan.MsmRecord
+			name, cohort string
+			rec          plan.MsmRecord
 		}{"ping-edge", "low-freq", plan.MsmRecord{MsmID: 3, Target: "1.2.3.4", Type: "ping", Interval: 900, ProbeIDs: []uint32{1}}},
 	)
 
@@ -313,42 +317,45 @@ func TestDiff_MultipleEntries(t *testing.T) {
 
 func TestDesiredState(t *testing.T) {
 	cfg := config.Config{
-		Rounds: []config.Round{
-			{Name: "high-freq", Count: 2, IntervalSeconds: 60, MaxProbesPerCell: 1},
-			{Name: "low-freq", Count: 3, IntervalSeconds: 900, MaxProbesPerCell: 2},
+		Cohorts: []config.Cohort{
+			{Name: "high-freq", ProbeCount: 2, IntervalSeconds: 60, MaxProbesPerCell: 1},
+			{Name: "low-freq", ProbeCount: 3, IntervalSeconds: 900, MaxProbesPerCell: 2},
 		},
 		Measurements: []config.Measurement{
-			{Name: "dns-canary", Type: config.TypeDNS, Target: "canary.supabase.co", Rounds: []string{"high-freq", "low-freq"}},
-			{Name: "ping-edge", Type: config.TypePing, Target: "1.2.3.4", Rounds: []string{"low-freq"}},
+			{
+				Name: "dns-canary", Type: config.TypeDNS, Target: "canary.supabase.co",
+				Cohorts: []string{"high-freq", "low-freq"},
+			},
+			{Name: "ping-edge", Type: config.TypePing, Target: "1.2.3.4", Cohorts: []string{"low-freq"}},
 		},
 	}
 
-	rounds := []selection.SelectedRound{
+	cohorts := []selection.SelectedCohort{
 		{
-			Round:  config.Round{Name: "high-freq"},
+			Cohort: config.Cohort{Name: "high-freq"},
 			Probes: []snapshot.Probe{{ID: 10}, {ID: 20}},
 		},
 		{
-			Round:  config.Round{Name: "low-freq"},
+			Cohort: config.Cohort{Name: "low-freq"},
 			Probes: []snapshot.Probe{{ID: 30}, {ID: 40}, {ID: 50}},
 		},
 	}
 
-	desired := plan.DesiredState(cfg, rounds)
+	desired := plan.DesiredState(cfg, cohorts)
 
 	require.Len(t, desired, 3) // dns-canary/high-freq, dns-canary/low-freq, ping-edge/low-freq
 
-	d := desired[plan.MsmKey{Name: "dns-canary", Round: "high-freq"}]
+	d := desired[plan.MsmKey{Name: "dns-canary", Cohort: "high-freq"}]
 	assert.Equal(t, "canary.supabase.co", d.Target)
 	assert.Equal(t, plan.MsmTypeDNS, d.Type)
 	assert.Equal(t, 60, d.Interval)
 	assert.ElementsMatch(t, []uint32{10, 20}, d.ProbeIDs)
 
-	d = desired[plan.MsmKey{Name: "dns-canary", Round: "low-freq"}]
+	d = desired[plan.MsmKey{Name: "dns-canary", Cohort: "low-freq"}]
 	assert.Equal(t, 900, d.Interval)
 	assert.ElementsMatch(t, []uint32{30, 40, 50}, d.ProbeIDs)
 
-	d = desired[plan.MsmKey{Name: "ping-edge", Round: "low-freq"}]
+	d = desired[plan.MsmKey{Name: "ping-edge", Cohort: "low-freq"}]
 	assert.Equal(t, "1.2.3.4", d.Target)
 	assert.Equal(t, plan.MsmTypePing, d.Type)
 	assert.ElementsMatch(t, []uint32{30, 40, 50}, d.ProbeIDs)
@@ -367,11 +374,11 @@ func TestEstimateCredits(t *testing.T) {
 	//
 	// total daily = 446400, weekly = 3124800
 	desired := map[plan.MsmKey]plan.DesiredMsm{
-		{Name: "dns-canary", Round: "high-freq"}: {
+		{Name: "dns-canary", Cohort: "high-freq"}: {
 			Target: "canary.supabase.co", Type: plan.MsmTypeDNS,
 			Interval: 60, ProbeIDs: makeProbeIDs(30),
 		},
-		{Name: "ping-edge", Round: "low-freq"}: {
+		{Name: "ping-edge", Cohort: "low-freq"}: {
 			Target: "1.2.3.4", Type: plan.MsmTypePing,
 			Interval: 900, ProbeIDs: makeProbeIDs(50),
 		},
@@ -410,8 +417,8 @@ func makeProbeIDs(n int) []uint32 {
 
 func TestTagCodec(t *testing.T) {
 	roundTrip := []struct {
-		name  string
-		round string
+		name   string
+		cohort string
 	}{
 		{"dns-canary", "high-freq"},
 		{"tls-canary", "mid-freq"},
@@ -420,11 +427,11 @@ func TestTagCodec(t *testing.T) {
 	}
 
 	for _, tt := range roundTrip {
-		tag := plan.FormatTag(tt.name, tt.round)
-		gotName, gotRound, ok := plan.ParseTag(tag)
+		tag := plan.FormatTag(tt.name, tt.cohort)
+		gotName, gotCohort, ok := plan.ParseTag(tag)
 		require.True(t, ok, "ParseTag(%q) should succeed", tag)
-		assert.Equal(t, tt.name, gotName, "name mismatch for (%s, %s)", tt.name, tt.round)
-		assert.Equal(t, tt.round, gotRound, "round mismatch for (%s, %s)", tt.name, tt.round)
+		assert.Equal(t, tt.name, gotName, "name mismatch for (%s, %s)", tt.name, tt.cohort)
+		assert.Equal(t, tt.cohort, gotCohort, "cohort mismatch for (%s, %s)", tt.name, tt.cohort)
 	}
 }
 
@@ -432,10 +439,10 @@ func TestTagCodec_TagEmbeddedInDescription(t *testing.T) {
 	tag := plan.FormatTag("dns-canary", "high-freq")
 	desc := "Supabase external telemetry " + tag + " — do not delete"
 
-	name, round, ok := plan.ParseTag(desc)
+	name, cohort, ok := plan.ParseTag(desc)
 	require.True(t, ok)
 	assert.Equal(t, "dns-canary", name)
-	assert.Equal(t, "high-freq", round)
+	assert.Equal(t, "high-freq", cohort)
 }
 
 func TestTagCodec_Malformed(t *testing.T) {
@@ -446,7 +453,7 @@ func TestTagCodec_Malformed(t *testing.T) {
 		{"no tag at all", "Supabase external telemetry"},
 		{"prefix only, no closing bracket", "[atlasctl:dns-canary:high-freq"},
 		{"empty name", "[atlasctl::high-freq]"},
-		{"empty round", "[atlasctl:dns-canary:]"},
+		{"empty cohort", "[atlasctl:dns-canary:]"},
 		{"no colon separator", "[atlasctl:dnscanaryhighfreq]"},
 	}
 

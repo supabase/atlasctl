@@ -13,7 +13,7 @@ type Config struct {
 	Snapshot     string        `yaml:"snapshot"`
 	State        string        `yaml:"state"`
 	TagPrefix    string        `yaml:"tag_prefix"`
-	Rounds       []Round       `yaml:"rounds"`
+	Cohorts      []Cohort      `yaml:"cohorts"`
 	Measurements []Measurement `yaml:"measurements"`
 	Scoring      ScoringConfig `yaml:"scoring"`
 	ExcludeTags  []string      `yaml:"exclude_tags"`
@@ -21,10 +21,10 @@ type Config struct {
 	Cities       []CityConfig  `yaml:"cities"`
 }
 
-// Round defines a frequency tier for probe selection.
-type Round struct {
+// Cohort defines a frequency tier for probe selection.
+type Cohort struct {
 	Name             string `yaml:"name"`
-	Count            int    `yaml:"count"`
+	ProbeCount       int    `yaml:"probe_count"`
 	IntervalSeconds  int    `yaml:"interval_seconds"`
 	MaxProbesPerCell int    `yaml:"max_probes_per_cell"`
 }
@@ -39,14 +39,14 @@ const (
 	TypeTraceroute MeasurementType = "traceroute"
 )
 
-// Measurement defines a single measurement target and its round assignments.
+// Measurement defines a single measurement target and its cohort assignments.
 type Measurement struct {
 	Name      string          `yaml:"name"`
 	Type      MeasurementType `yaml:"type"`
 	Target    string          `yaml:"target"`
 	QueryType string          `yaml:"query_type"` // DNS only: A, AAAA, NS, MX, ...
 	AF        int             `yaml:"af"`         // address family: 4 or 6, default 4
-	Rounds    []string        `yaml:"rounds"`
+	Cohorts   []string        `yaml:"cohorts"`
 }
 
 // BandThresholds defines the minimum score for each band tier.
@@ -147,8 +147,8 @@ var validMeasurementTypes = map[MeasurementType]bool{
 func (c *Config) validate() error {
 	var errs []error
 
-	if len(c.Rounds) == 0 {
-		errs = append(errs, errors.New("at least one round is required"))
+	if len(c.Cohorts) == 0 {
+		errs = append(errs, errors.New("at least one cohort is required"))
 	}
 
 	// in validate()
@@ -160,23 +160,23 @@ func (c *Config) validate() error {
 		}
 	}
 
-	roundNames := make(map[string]bool, len(c.Rounds))
-	for i, r := range c.Rounds {
+	cohortNames := make(map[string]bool, len(c.Cohorts))
+	for i, r := range c.Cohorts {
 		if r.Name == "" {
-			errs = append(errs, fmt.Errorf("rounds[%d]: name is required", i))
+			errs = append(errs, fmt.Errorf("cohorts[%d]: name is required", i))
 		}
-		if roundNames[r.Name] {
-			errs = append(errs, fmt.Errorf("duplicate round name %q", r.Name))
+		if cohortNames[r.Name] {
+			errs = append(errs, fmt.Errorf("duplicate cohort name %q", r.Name))
 		}
-		roundNames[r.Name] = true
-		if r.Count <= 0 {
-			errs = append(errs, fmt.Errorf("round %q: count must be positive", r.Name))
+		cohortNames[r.Name] = true
+		if r.ProbeCount <= 0 {
+			errs = append(errs, fmt.Errorf("cohort %q: probe_count must be positive", r.Name))
 		}
 		if r.IntervalSeconds <= 0 {
-			errs = append(errs, fmt.Errorf("round %q: interval_seconds must be positive", r.Name))
+			errs = append(errs, fmt.Errorf("cohort %q: interval_seconds must be positive", r.Name))
 		}
 		if r.MaxProbesPerCell <= 0 {
-			errs = append(errs, fmt.Errorf("round %q: max_probes_per_cell must be positive", r.Name))
+			errs = append(errs, fmt.Errorf("cohort %q: max_probes_per_cell must be positive", r.Name))
 		}
 	}
 
@@ -195,15 +195,15 @@ func (c *Config) validate() error {
 		if m.Target == "" {
 			errs = append(errs, fmt.Errorf("measurement %q: target is required", m.Name))
 		}
-		if len(m.Rounds) == 0 {
-			errs = append(errs, fmt.Errorf("measurement %q: at least one round reference is required", m.Name))
+		if len(m.Cohorts) == 0 {
+			errs = append(errs, fmt.Errorf("measurement %q: at least one cohort reference is required", m.Name))
 		}
 		if m.AF != 4 && m.AF != 6 {
 			errs = append(errs, fmt.Errorf("measurement %q: af must be 4 or 6, got %d", m.Name, m.AF))
 		}
-		for _, ref := range m.Rounds {
-			if !roundNames[ref] {
-				errs = append(errs, fmt.Errorf("measurement %q: references unknown round %q", m.Name, ref))
+		for _, ref := range m.Cohorts {
+			if !cohortNames[ref] {
+				errs = append(errs, fmt.Errorf("measurement %q: references unknown cohort %q", m.Name, ref))
 			}
 		}
 	}

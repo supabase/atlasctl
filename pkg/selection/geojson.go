@@ -23,11 +23,11 @@ type geoJSONProperties struct {
 	ASN4        uint32   `json:"asn4"`
 	CountryCode string   `json:"country_code"`
 	Tags        []string `json:"tags"`
-	Round       string   `json:"round"`
+	Cohort      string   `json:"cohort"`
 }
 
-// GeoJSONRound serialises a single SelectedRound as a GeoJSON FeatureCollection.
-func GeoJSONRound(r SelectedRound) ([]byte, error) {
+// GeoJSONCohort serialises a single SelectedCohort as a GeoJSON FeatureCollection.
+func GeoJSONCohort(r SelectedCohort) ([]byte, error) {
 	features := make([]geoJSONFeature, 0, len(r.Probes))
 	for _, p := range r.Probes {
 		features = append(features, geoJSONFeature{
@@ -41,7 +41,7 @@ func GeoJSONRound(r SelectedRound) ([]byte, error) {
 				ASN4:        p.ASN4,
 				CountryCode: p.CountryCode,
 				Tags:        p.Tags,
-				Round:       r.Round.Name,
+				Cohort:      r.Cohort.Name,
 			},
 		})
 	}
@@ -51,13 +51,13 @@ func GeoJSONRound(r SelectedRound) ([]byte, error) {
 	})
 }
 
-// GeoJSON serialises all selected rounds as a single GeoJSON FeatureCollection.
-// Each probe becomes a Point feature with a "round" property identifying which
-// round it was selected for. A single collection is valid GeoJSON and can be
+// GeoJSON serialises all selected cohorts as a single GeoJSON FeatureCollection.
+// Each probe becomes a Point feature with a "cohort" property identifying which
+// cohort it was selected for. A single collection is valid GeoJSON and can be
 // loaded directly into geojson.io or any GIS tool.
-func GeoJSON(rounds []SelectedRound) ([]byte, error) {
+func GeoJSON(cohorts []SelectedCohort) ([]byte, error) {
 	var features []geoJSONFeature
-	for _, r := range rounds {
+	for _, r := range cohorts {
 		for _, p := range r.Probes {
 			features = append(features, geoJSONFeature{
 				Type: "Feature",
@@ -70,7 +70,7 @@ func GeoJSON(rounds []SelectedRound) ([]byte, error) {
 					ASN4:        p.ASN4,
 					CountryCode: p.CountryCode,
 					Tags:        p.Tags,
-					Round:       r.Round.Name,
+					Cohort:      r.Cohort.Name,
 				},
 			})
 		}

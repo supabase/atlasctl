@@ -15,7 +15,7 @@ var ErrMsmNotFound = errors.New("measurement not found")
 type MsmInfo struct {
 	ID          uint64
 	Description string
-	StatusID    uint     // e.g. goat.MeasurementStatusOngoing = 2
+	StatusID    uint // e.g. goat.MeasurementStatusOngoing = 2
 	Type        string
 	Target      string
 	Interval    int
@@ -114,7 +114,7 @@ func LiveDiff(
 			})
 			continue
 		}
-		key := MsmKey{Name: name, Round: round}
+		key := MsmKey{Name: name, Cohort: round}
 		if _, inState := state.GetRecord(name, round); !inState {
 			warnings = append(warnings, DriftWarning{
 				Kind:  DriftOrphan,
@@ -129,17 +129,17 @@ func LiveDiff(
 	}
 
 	// Ghost check: state records whose MsmID is absent from the live set.
-	for msmName, rounds := range state.Measurements {
-		for roundName, rec := range rounds {
+	for msmName, cohorts := range state.Measurements {
+		for cohortName, rec := range cohorts {
 			if _, alive := liveByID[rec.MsmID]; !alive {
-				key := MsmKey{Name: msmName, Round: roundName}
+				key := MsmKey{Name: msmName, Cohort: cohortName}
 				warnings = append(warnings, DriftWarning{
 					Kind:  DriftGhost,
 					Key:   key,
 					MsmID: rec.MsmID,
 					Message: fmt.Sprintf(
 						"state references measurement %d (%s/%s) which is not in live ongoing set",
-						rec.MsmID, msmName, roundName,
+						rec.MsmID, msmName, cohortName,
 					),
 				})
 			}

@@ -1,3 +1,7 @@
 .gograph/
+/atlasctl.yaml
+/output.json
+/snapshot.json
+/state.yaml
 /atlasctl
 /dist/
