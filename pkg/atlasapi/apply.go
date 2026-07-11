@@ -1,4 +1,4 @@
-package goatadapter
+package atlasapi
 
 import (
 	"context"
@@ -10,9 +10,8 @@ import (
 	"github.com/supabase/atlasctl/pkg/plan"
 )
 
-// ApplyClient implements plan.ApplyClient using the goat library.
-// It embeds MsmClient so that it also satisfies plan.MsmClient (GetMeasurement
-// and ListMyMeasurements).
+// ApplyClient implements plan.ApplyClient using the RIPE Atlas API.
+// It embeds MsmClient to satisfy plan.MsmClient as well.
 type ApplyClient struct {
 	MsmClient
 }
@@ -25,11 +24,11 @@ func NewApplyClient(apiKey *uuid.UUID, verbose bool, codec plan.TagCodec) *Apply
 }
 
 // CreateMeasurement creates a new RIPE Atlas measurement from spec.
-// The measurement description embeds the atlasctl tag so that LiveDiff can
-// reconcile state against the live API.
+// The description embeds the atlasctl tag so that LiveDiff can reconcile
+// state against the live API.
 //
-// goat quirk: MeasurementSpec.Schedule() does not accept a context. We check
-// ctx.Err() immediately before calling it.
+// API quirk: Schedule() does not accept a context. We check ctx.Err()
+// immediately before calling it.
 func (c *ApplyClient) CreateMeasurement(ctx context.Context, spec plan.MsmSpec) (uint64, error) {
 	if err := ctx.Err(); err != nil {
 		return 0, err
@@ -80,8 +79,8 @@ func (c *ApplyClient) CreateMeasurement(ctx context.Context, spec plan.MsmSpec) 
 
 // StopMeasurement stops the ongoing measurement with the given ID.
 //
-// goat quirk: MeasurementSpec.Stop() does not accept a context. We check
-// ctx.Err() immediately before calling it.
+// API quirk: Stop() does not accept a context. We check ctx.Err() immediately
+// before calling it.
 func (c *ApplyClient) StopMeasurement(ctx context.Context, id uint64) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -98,8 +97,7 @@ func (c *ApplyClient) StopMeasurement(ctx context.Context, id uint64) error {
 // AddParticipants adds probeIDs to the ongoing measurement via a participation
 // request.
 //
-// goat quirk: ParticipationRequest() does not accept a context. We check
-// ctx.Err() immediately before calling it.
+// API quirk: ParticipationRequest() does not accept a context.
 func (c *ApplyClient) AddParticipants(ctx context.Context, id uint64, probeIDs []uint32) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -123,8 +121,7 @@ func (c *ApplyClient) AddParticipants(ctx context.Context, id uint64, probeIDs [
 // RemoveParticipants removes probeIDs from the ongoing measurement via a
 // participation request.
 //
-// goat quirk: ParticipationRequest() does not accept a context. We check
-// ctx.Err() immediately before calling it.
+// API quirk: ParticipationRequest() does not accept a context.
 func (c *ApplyClient) RemoveParticipants(ctx context.Context, id uint64, probeIDs []uint32) error {
 	if err := ctx.Err(); err != nil {
 		return err

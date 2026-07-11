@@ -3,7 +3,7 @@ package main
 import (
 	"github.com/google/uuid"
 
-	"github.com/supabase/atlasctl/internal/goatadapter"
+	"github.com/supabase/atlasctl/pkg/atlasapi"
 	"github.com/supabase/atlasctl/pkg/plan"
 	"github.com/supabase/atlasctl/pkg/snapshot"
 )
@@ -21,13 +21,13 @@ type Deps struct {
 func defaultDeps() Deps {
 	return Deps{
 		NewSnapshotClient: func(_ *uuid.UUID, verbose bool) snapshot.Client {
-			return &goatadapter.ProbeClient{Verbose: verbose}
+			return &atlasapi.ProbeClient{Verbose: verbose}
 		},
 		NewMsmClient: func(key *uuid.UUID, verbose bool, codec plan.TagCodec) plan.MsmClient {
-			return &goatadapter.MsmClient{APIKey: key, Verbose: verbose, TagCodec: codec}
+			return &atlasapi.MsmClient{APIKey: key, Verbose: verbose, TagCodec: codec}
 		},
 		NewApplyClient: func(key *uuid.UUID, verbose bool, codec plan.TagCodec) plan.ApplyClient {
-			return goatadapter.NewApplyClient(key, verbose, codec)
+			return atlasapi.NewApplyClient(key, verbose, codec)
 		},
 	}
 }

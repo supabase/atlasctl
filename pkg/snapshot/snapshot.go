@@ -31,7 +31,7 @@ type Snapshot struct {
 }
 
 // Client fetches probes from the RIPE Atlas API.
-// It is implemented by a goat adapter in internal/goatadapter and by FakeClient for tests.
+// It is implemented by pkg/atlasapi and by FakeClient for tests.
 type Client interface {
 	FetchProbes(ctx context.Context) ([]Probe, error)
 }
