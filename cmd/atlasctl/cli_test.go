@@ -42,10 +42,10 @@ func testDeps(msmClient plan.MsmClient, applyClient plan.ApplyClient) Deps {
 		NewSnapshotClient: func(*uuid.UUID, bool) snapshot.Client {
 			return &snapshot.FakeClient{}
 		},
-		NewMsmClient: func(*uuid.UUID, bool) plan.MsmClient {
+		NewMsmClient: func(*uuid.UUID, bool, plan.TagCodec) plan.MsmClient {
 			return msmClient
 		},
-		NewApplyClient: func(*uuid.UUID, bool) plan.ApplyClient {
+		NewApplyClient: func(*uuid.UUID, bool, plan.TagCodec) plan.ApplyClient {
 			return applyClient
 		},
 	}
@@ -133,8 +133,8 @@ func TestApply_DryRunFlag(t *testing.T) {
 	// so it satisfies plan.MsmClient.
 	deps := Deps{
 		NewSnapshotClient: func(*uuid.UUID, bool) snapshot.Client { return &snapshot.FakeClient{} },
-		NewMsmClient:      func(*uuid.UUID, bool) plan.MsmClient { return fakeApply },
-		NewApplyClient:    func(*uuid.UUID, bool) plan.ApplyClient { return fakeApply },
+		NewMsmClient:      func(*uuid.UUID, bool, plan.TagCodec) plan.MsmClient { return fakeApply },
+		NewApplyClient:    func(*uuid.UUID, bool, plan.TagCodec) plan.ApplyClient { return fakeApply },
 	}
 
 	_, _, err := run(deps,

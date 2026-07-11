@@ -5,40 +5,51 @@ import (
 	"strings"
 )
 
-// tagPrefix is the fixed start of every atlasctl description tag.
-const tagPrefix = "[atlasctl:"
+// DefaultTagPrefix is the tag prefix used when no custom prefix is configured.
+const DefaultTagPrefix = "[atlasctl:"
 
-// FormatTag produces the description tag that atlasctl embeds in every RIPE
-// Atlas measurement description. The tag format is:
+// TagCodec encodes and decodes atlasctl description tags using a configurable
+// prefix. The tag format is:
 //
-//	[atlasctl:<name>:<round>]
+//	<prefix><name>:<round>]
 //
-// This allows discovery via the RIPE Atlas API if the state file is lost:
-//
-//	goat fm -my -deschas "[atlasctl:"
-//
-// Constraint: name and round must not contain "]" or the first ":" after the
-// prefix — both are used as delimiters. Config validation enforces simple
-// identifiers, so this is satisfied in practice.
-func FormatTag(name, round string) string {
-	return fmt.Sprintf("%s%s:%s]", tagPrefix, name, round)
+// Changing the prefix after measurements have been created is a breaking
+// operation — existing measurements will appear as orphans during drift
+// detection since their descriptions no longer match. Treat the prefix as a
+// structural attribute: set it once and leave it.
+type TagCodec struct {
+	prefix string
 }
 
-// ParseTag extracts the (name, round) pair from a string that contains an
-// atlasctl description tag. The tag may appear anywhere in the string (e.g.
-// amid a longer RIPE Atlas description).
+// NewTagCodec returns a TagCodec using the given prefix. If prefix is empty,
+// DefaultTagPrefix is used.
+func NewTagCodec(prefix string) TagCodec {
+	if prefix == "" {
+		prefix = DefaultTagPrefix
+	}
+	return TagCodec{prefix: prefix}
+}
+
+// Prefix returns the raw prefix string, useful for API filter calls.
+func (tc TagCodec) Prefix() string { return tc.prefix }
+
+// Format produces the description tag for a (name, round) pair.
+func (tc TagCodec) Format(name, round string) string {
+	return fmt.Sprintf("%s%s:%s]", tc.prefix, name, round)
+}
+
+// Parse extracts the (name, round) pair from a string that may contain an
+// atlasctl description tag. The tag may appear anywhere in the string.
 //
-// Returns ok=false if:
-//   - the tag prefix is not present
-//   - the closing "]" is missing
-//   - name or round would be empty
-func ParseTag(desc string) (name, round string, ok bool) {
-	start := strings.Index(desc, tagPrefix)
+// Returns ok=false if the prefix is absent, the closing "]" is missing, or
+// name or round would be empty.
+func (tc TagCodec) Parse(desc string) (name, round string, ok bool) {
+	start := strings.Index(desc, tc.prefix)
 	if start == -1 {
 		return "", "", false
 	}
 
-	rest := desc[start+len(tagPrefix):]
+	rest := desc[start+len(tc.prefix):]
 
 	end := strings.Index(rest, "]")
 	if end == -1 {
@@ -50,10 +61,20 @@ func ParseTag(desc string) (name, round string, ok bool) {
 	// Split on the first colon only so round names may contain colons.
 	sep := strings.Index(inner, ":")
 	if sep <= 0 || sep == len(inner)-1 {
-		// sep<=0: colon missing or name is empty
-		// sep==len(inner)-1: round is empty
 		return "", "", false
 	}
 
 	return inner[:sep], inner[sep+1:], true
+}
+
+// FormatTag is a package-level convenience using DefaultTagPrefix.
+// Prefer TagCodec.Format when a configured prefix is available.
+func FormatTag(name, round string) string {
+	return NewTagCodec("").Format(name, round)
+}
+
+// ParseTag is a package-level convenience using DefaultTagPrefix.
+// Prefer TagCodec.Parse when a configured prefix is available.
+func ParseTag(desc string) (name, round string, ok bool) {
+	return NewTagCodec("").Parse(desc)
 }

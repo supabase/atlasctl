@@ -32,6 +32,7 @@ type MsmRecord struct {
 	MsmID    uint64   `yaml:"msm_id"`
 	Target   string   `yaml:"target"`
 	Type     string   `yaml:"type"`
+	AF       int      `yaml:"af"`
 	Interval int      `yaml:"interval"`
 	ProbeIDs []uint32 `yaml:"probe_ids"`
 }

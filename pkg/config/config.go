@@ -12,6 +12,7 @@ import (
 type Config struct {
 	Snapshot     string        `yaml:"snapshot"`
 	State        string        `yaml:"state"`
+	TagPrefix    string        `yaml:"tag_prefix"`
 	Rounds       []Round       `yaml:"rounds"`
 	Measurements []Measurement `yaml:"measurements"`
 	Scoring      ScoringConfig `yaml:"scoring"`
@@ -44,6 +45,7 @@ type Measurement struct {
 	Type      MeasurementType `yaml:"type"`
 	Target    string          `yaml:"target"`
 	QueryType string          `yaml:"query_type"` // DNS only: A, AAAA, NS, MX, ...
+	AF        int             `yaml:"af"`         // address family: 4 or 6, default 4
 	Rounds    []string        `yaml:"rounds"`
 }
 
@@ -112,6 +114,9 @@ func Load(path string) (*Config, error) {
 }
 
 func (c *Config) applyDefaults() {
+	if c.TagPrefix == "" {
+		c.TagPrefix = "[atlasctl:"
+	}
 	if c.GeoDiversity.H3Resolution == 0 {
 		c.GeoDiversity.H3Resolution = 3
 	}
@@ -124,6 +129,11 @@ func (c *Config) applyDefaults() {
 	}
 	if t.C == 0 {
 		t.C = 3
+	}
+	for i := range c.Measurements {
+		if c.Measurements[i].AF == 0 {
+			c.Measurements[i].AF = 4
+		}
 	}
 }
 
@@ -178,6 +188,9 @@ func (c *Config) validate() error {
 		}
 		if len(m.Rounds) == 0 {
 			errs = append(errs, fmt.Errorf("measurement %q: at least one round reference is required", m.Name))
+		}
+		if m.AF != 4 && m.AF != 6 {
+			errs = append(errs, fmt.Errorf("measurement %q: af must be 4 or 6, got %d", m.Name, m.AF))
 		}
 		for _, ref := range m.Rounds {
 			if !roundNames[ref] {

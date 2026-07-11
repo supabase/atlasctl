@@ -12,8 +12,9 @@ import (
 
 // MsmClient implements plan.MsmClient using the goat library.
 type MsmClient struct {
-	APIKey  *uuid.UUID
-	Verbose bool
+	APIKey   *uuid.UUID
+	Verbose  bool
+	TagCodec plan.TagCodec
 }
 
 // GetMeasurement retrieves a single measurement by ID.
@@ -41,7 +42,7 @@ func (c *MsmClient) ListMyMeasurements(ctx context.Context) ([]plan.MsmInfo, err
 	filter := goat.NewMeasurementFilter()
 	filter.FilterMy()
 	filter.FilterStatus(goat.MeasurementStatusOngoing)
-	filter.FilterDescriptionHas("[atlasctl:")
+	filter.FilterDescriptionHas(c.TagCodec.Prefix())
 	filter.ApiKey(c.APIKey)
 	filter.Verbose(c.Verbose)
 	filter.Limit(^uint(0)) // see godoc on ProbeClient.FetchProbes

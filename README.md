@@ -38,7 +38,7 @@ The challenge is operational. RIPE Atlas measurements are created individually, 
    state.yaml (updated with new measurement IDs)
        |
        v
-   atlas_exporter ---> Prometheus ---> Victoria Metrics ---> Grafana
+   state.yaml (measurement IDs) ---> downstream consumers
 ```
 
 `select` and `plan` are read-only. Only `apply` touches the RIPE Atlas API in a way that costs credits or modifies live measurements.
@@ -413,29 +413,12 @@ Drift is reported as warnings, not errors. The operator decides how to resolve.
 
 ## Downstream pipeline
 
-Measurement results flow from RIPE Atlas into the Supabase observability stack via [atlas_exporter](https://github.com/czerwonk/atlas_exporter), a Prometheus exporter that subscribes to the RIPE Atlas streaming WebSocket.
+`state.yaml` records the measurement IDs of all active measurements. Any tool that can subscribe to the RIPE Atlas streaming WebSocket (`wss://atlas-stream.ripe.net/stream/`) can consume results using those IDs. [atlas_exporter](https://github.com/czerwonk/atlas_exporter) is one option: it exposes results as Prometheus metrics.
 
-```
-  RIPE Atlas Streaming API (wss://atlas-stream.ripe.net/stream/)
-          |
-          v
-    atlas_exporter    (subscribes using measurement IDs from state.yaml)
-          |
-          v
-    Prometheus scrape
-          |
-          v
-    Victoria Metrics  (long-term storage)
-          |
-          v
-    Grafana           (dashboards, alerting)
-```
-
-In addition to our own measurements, RIPE Atlas has thousands of ongoing public measurements created by researchers and network operators. Subscribing to public measurements against Google DNS, Cloudflare, and major CDN endpoints provides incident correlation signals: if our canary fails from AT&T probes at the same time a public google.com measurement fails from the same probes, the failure is almost certainly network-level, not Supabase-specific.
+In addition to managed measurements, RIPE Atlas has thousands of ongoing public measurements created by researchers and network operators. These can be subscribed to at no credit cost and are useful for incident correlation. If a managed canary fails from AT&T probes at the same time a public google.com measurement fails from the same probes, the failure is almost certainly network-level.
 
 ## Constraints
 
-- IPv4 only. Supabase edge does not currently support IPv6.
 - No HTTP measurements. RIPE Atlas supports ping, DNS, TLS, traceroute, and NTP only.
 - Minimum measurement interval: 60 seconds per probe.
 - All RIPE Atlas measurements are publicly queryable by design.

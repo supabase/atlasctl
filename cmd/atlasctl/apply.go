@@ -56,7 +56,7 @@ func newApplyCmd(f *globalFlags, deps Deps) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			applyClient := deps.NewApplyClient(apiKey, f.Verbose)
+			applyClient := deps.NewApplyClient(apiKey, f.Verbose, plan.NewTagCodec(cfg.TagPrefix))
 
 			cs, warnings, err := plan.LiveDiff(ctx, desired, state, applyClient)
 			if err != nil {

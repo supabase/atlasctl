@@ -14,6 +14,7 @@ type MsmSpec struct {
 	Key      MsmKey
 	Target   string
 	Type     MsmType
+	AF       int // address family: 4 or 6
 	Interval int
 	ProbeIDs []uint32
 }
@@ -83,6 +84,7 @@ func Apply(
 				Key:      ch.Key,
 				Target:   ch.Desired.Target,
 				Type:     ch.Desired.Type,
+				AF:       ch.Desired.AF,
 				Interval: ch.Desired.Interval,
 				ProbeIDs: ch.Desired.ProbeIDs,
 			}
@@ -104,6 +106,7 @@ func Apply(
 				MsmID:    id,
 				Target:   ch.Desired.Target,
 				Type:     string(ch.Desired.Type),
+				AF:       ch.Desired.AF,
 				Interval: ch.Desired.Interval,
 				ProbeIDs: ch.Desired.ProbeIDs,
 			})
@@ -213,6 +216,7 @@ func cloneState(sf StateFile) StateFile {
 				MsmID:    rec.MsmID,
 				Target:   rec.Target,
 				Type:     rec.Type,
+				AF:       rec.AF,
 				Interval: rec.Interval,
 				ProbeIDs: append([]uint32(nil), rec.ProbeIDs...),
 			}
