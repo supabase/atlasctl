@@ -151,6 +151,15 @@ func (c *Config) validate() error {
 		errs = append(errs, errors.New("at least one round is required"))
 	}
 
+	// in validate()
+	for slug := range c.Scoring.Tags {
+		if _, conflict := c.Scoring.Stability[slug]; conflict {
+			errs = append(errs,
+				fmt.Errorf("scoring: tag slug %q appears in both tags and stability",
+					slug))
+		}
+	}
+
 	roundNames := make(map[string]bool, len(c.Rounds))
 	for i, r := range c.Rounds {
 		if r.Name == "" {

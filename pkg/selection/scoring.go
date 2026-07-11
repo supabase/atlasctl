@@ -42,8 +42,11 @@ func (b Band) String() string {
 //	1 (base) + ASN weight + country weight + sum(tag weights) + sum(stability weights)
 //
 // All four contribution axes are independent. Tags and stability slugs are
-// both matched against the probe's tag list, so a tag slug can earn weight
-// from at most one of the two maps (they are conventionally disjoint sets).
+// both matched against the probe's tag list, so a tag slug should earn weight
+// from at most one of the two maps
+//
+// config validation rejects overlapping slugs.
+
 func Score(p snapshot.Probe, cfg config.ScoringConfig) int {
 	score := 1 // every connected probe starts from 1
 
