@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"net/url"
 
 	"github.com/spf13/cobra"
 
@@ -12,6 +13,7 @@ import (
 
 func newSelectCmd(f *globalFlags, _ Deps) *cobra.Command {
 	var format string
+	var geojsonLink bool
 
 	cmd := &cobra.Command{
 		Use:   "select",
@@ -34,12 +36,25 @@ func newSelectCmd(f *globalFlags, _ Deps) *cobra.Command {
 				return err
 			}
 
+			data, err := selection.GeoJSON(rounds)
+			if err != nil {
+				return err
+			}
+
+			if geojsonLink {
+				for _, r := range rounds {
+					roundData, err := selection.GeoJSONRound(r)
+					if err != nil {
+						return err
+					}
+					link := "https://geojson.io/#data=data:application/json," + url.QueryEscape(string(roundData))
+					fmt.Fprintf(cmd.OutOrStdout(), "%s: %s\n", r.Round.Name, link)
+				}
+				return nil
+			}
+
 			switch format {
 			case "geojson":
-				data, err := selection.GeoJSON(rounds)
-				if err != nil {
-					return err
-				}
 				fmt.Fprintln(cmd.OutOrStdout(), string(data))
 			default:
 				report := selection.Report(rounds, cfg.Scoring)
@@ -50,5 +65,7 @@ func newSelectCmd(f *globalFlags, _ Deps) *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&format, "format", "text", "output format: text, geojson")
+	cmd.Flags().BoolVar(&geojsonLink, "geojson-link", false,
+		"print a geojson.io URL with probe locations encoded")
 	return cmd
 }
