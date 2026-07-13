@@ -49,7 +49,10 @@ func newPlanCmd(f *globalFlags, deps Deps) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			msmClient := deps.NewMsmClient(apiKey, f.Verbose, plan.NewTagCodec(cfg.TagPrefix))
+			msmClient, err := deps.NewMsmClient(apiKey, f.Verbose, plan.NewTagCodec(cfg.TagPrefix))
+			if err != nil {
+				return err
+			}
 
 			cs, warnings, err := plan.LiveDiff(ctx, desired, state, msmClient)
 			if err != nil {

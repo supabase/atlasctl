@@ -2,10 +2,8 @@ package main
 
 import (
 	"errors"
-	"fmt"
 	"os"
 
-	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 	"github.com/spf13/cobra"
 )
@@ -63,19 +61,15 @@ func initLogger(cmd *cobra.Command, level string) error {
 }
 
 // resolveAPIKey returns the API key from the flag value or the
-// RIPE_ATLAS_API_KEY environment variable. Returns an error if neither is set
-// or if the value is not a valid UUID.
-func resolveAPIKey(flagVal string) (*uuid.UUID, error) {
+// RIPE_ATLAS_API_KEY environment variable. Returns an error if neither is set.
+// UUID format validation is deferred to the client constructors.
+func resolveAPIKey(flagVal string) (string, error) {
 	s := flagVal
 	if s == "" {
 		s = os.Getenv("RIPE_ATLAS_API_KEY")
 	}
 	if s == "" {
-		return nil, errors.New("RIPE Atlas API key required: use --api-key or set RIPE_ATLAS_API_KEY")
+		return "", errors.New("RIPE Atlas API key required: use --api-key or set RIPE_ATLAS_API_KEY")
 	}
-	k, err := uuid.Parse(s)
-	if err != nil {
-		return nil, fmt.Errorf("invalid API key (expected UUID): %w", err)
-	}
-	return &k, nil
+	return s, nil
 }

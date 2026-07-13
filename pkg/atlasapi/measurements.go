@@ -12,9 +12,18 @@ import (
 
 // MsmClient implements plan.MsmClient using the RIPE Atlas API.
 type MsmClient struct {
-	APIKey   *uuid.UUID
+	apiKey   *uuid.UUID
 	Verbose  bool
 	TagCodec plan.TagCodec
+}
+
+// NewMsmClient constructs an MsmClient from a raw API key string.
+func NewMsmClient(apiKey string, verbose bool, codec plan.TagCodec) (*MsmClient, error) {
+	k, err := uuid.Parse(apiKey)
+	if err != nil {
+		return nil, fmt.Errorf("invalid API key (expected UUID): %w", err)
+	}
+	return &MsmClient{apiKey: &k, Verbose: verbose, TagCodec: codec}, nil
 }
 
 // GetMeasurement retrieves a single measurement by ID.
@@ -23,7 +32,7 @@ func (c *MsmClient) GetMeasurement(ctx context.Context, id uint64) (plan.MsmInfo
 	if err := ctx.Err(); err != nil {
 		return plan.MsmInfo{}, err
 	}
-	msm, err := goat.GetMeasurement(c.Verbose, uint(id), c.APIKey)
+	msm, err := goat.GetMeasurement(c.Verbose, uint(id), c.apiKey)
 	if err != nil {
 		return plan.MsmInfo{}, fmt.Errorf("GetMeasurement(%d): %w", id, err)
 	}
@@ -42,7 +51,7 @@ func (c *MsmClient) ListMyMeasurements(ctx context.Context) ([]plan.MsmInfo, err
 	filter.FilterMy()
 	filter.FilterStatus(goat.MeasurementStatusOngoing)
 	filter.FilterDescriptionHas(c.TagCodec.Prefix())
-	filter.ApiKey(c.APIKey)
+	filter.ApiKey(c.apiKey)
 	filter.Verbose(c.Verbose)
 	filter.Limit(^uint(0))
 

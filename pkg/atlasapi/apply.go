@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/google/uuid"
 	goat "github.com/robert-kisteleki/goat"
 
 	"github.com/supabase/atlasctl/pkg/plan"
@@ -17,10 +16,12 @@ type ApplyClient struct {
 }
 
 // NewApplyClient returns an ApplyClient ready for use.
-func NewApplyClient(apiKey *uuid.UUID, verbose bool, codec plan.TagCodec) *ApplyClient {
-	return &ApplyClient{
-		MsmClient: MsmClient{APIKey: apiKey, Verbose: verbose, TagCodec: codec},
+func NewApplyClient(apiKey string, verbose bool, codec plan.TagCodec) (*ApplyClient, error) {
+	msm, err := NewMsmClient(apiKey, verbose, codec)
+	if err != nil {
+		return nil, err
 	}
+	return &ApplyClient{MsmClient: *msm}, nil
 }
 
 // CreateMeasurement creates a new RIPE Atlas measurement from spec.
@@ -35,7 +36,7 @@ func (c *ApplyClient) CreateMeasurement(ctx context.Context, spec plan.MsmSpec) 
 	}
 
 	ms := goat.NewMeasurementSpec()
-	ms.ApiKey(c.MsmClient.APIKey)
+	ms.ApiKey(c.MsmClient.apiKey)
 	ms.Verbose(c.MsmClient.Verbose)
 
 	desc := c.MsmClient.TagCodec.Format(spec.Key.Name, spec.Key.Cohort)
@@ -86,7 +87,7 @@ func (c *ApplyClient) StopMeasurement(ctx context.Context, id uint64) error {
 		return err
 	}
 	ms := goat.NewMeasurementSpec()
-	ms.ApiKey(c.MsmClient.APIKey)
+	ms.ApiKey(c.MsmClient.apiKey)
 	ms.Verbose(c.MsmClient.Verbose)
 	if err := ms.Stop(uint(id)); err != nil {
 		return fmt.Errorf("Stop(%d): %w", id, err)
@@ -103,7 +104,7 @@ func (c *ApplyClient) AddParticipants(ctx context.Context, id uint64, probeIDs [
 		return err
 	}
 	ms := goat.NewMeasurementSpec()
-	ms.ApiKey(c.MsmClient.APIKey)
+	ms.ApiKey(c.MsmClient.apiKey)
 	ms.Verbose(c.MsmClient.Verbose)
 	list := make([]uint, len(probeIDs))
 	for i, pid := range probeIDs {
@@ -127,7 +128,7 @@ func (c *ApplyClient) RemoveParticipants(ctx context.Context, id uint64, probeID
 		return err
 	}
 	ms := goat.NewMeasurementSpec()
-	ms.ApiKey(c.MsmClient.APIKey)
+	ms.ApiKey(c.MsmClient.apiKey)
 	ms.Verbose(c.MsmClient.Verbose)
 	list := make([]uint, len(probeIDs))
 	for i, pid := range probeIDs {
