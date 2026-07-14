@@ -12,11 +12,11 @@ import (
 )
 
 // CoverageReport summarises the geographic and network diversity of a set of
-// selected probe rounds. It is intended for operator review before applying.
+// selected probe cohorts. It is intended for operator review before applying.
 type CoverageReport struct {
-	// ProbesByRound is the number of selected probes per round name, in order.
-	ProbesByRound []RoundCount `json:"probes_by_round"`
-	// TotalProbes is the sum of probes across all rounds.
+	// ProbesByCohort is the number of selected probes per cohort name, in order.
+	ProbesByCohort []CohortCount `json:"probes_by_cohort"`
+	// TotalProbes is the sum of probes across all cohorts.
 	TotalProbes int `json:"total_probes"`
 	// UniqueH3Cells is the number of distinct H3 cells occupied at resolutions
 	// 2, 3, and 4. Higher resolution = smaller cells = finer diversity signal.
@@ -42,22 +42,22 @@ type ScoreStats struct {
 	Max    int `json:"max"`
 }
 
-// RoundCount pairs a round name with its probe count.
-type RoundCount struct {
-	Round string `json:"round"`
-	Count int    `json:"count"`
+// CohortCount pairs a cohort name with its probe count.
+type CohortCount struct {
+	Cohort     string `json:"cohort"`
+	ProbeCount int    `json:"probe_count"`
 }
 
 // h3Resolutions are the three fixed resolutions always reported.
 var h3Resolutions = []int{2, 3, 4}
 
-// Report computes a CoverageReport from a set of selected rounds.
+// Report computes a CoverageReport from a set of selected cohorts.
 // scoring is used to assign score bands to each probe.
 //
+// sketch shows for Report(cohorts []SelectedCohort), because band distribution
 // Note: the function signature adds a scoring parameter beyond what the plan
-// sketch shows for Report(rounds []SelectedRound), because band distribution
 // cannot be derived from probe data alone — it requires the config weights.
-func Report(rounds []SelectedRound, scoring config.ScoringConfig) CoverageReport {
+func Report(cohorts []SelectedCohort, scoring config.ScoringConfig) CoverageReport {
 	cells := map[int]map[h3.Cell]struct{}{}
 	for _, res := range h3Resolutions {
 		cells[res] = make(map[h3.Cell]struct{})
@@ -66,12 +66,12 @@ func Report(rounds []SelectedRound, scoring config.ScoringConfig) CoverageReport
 	countries := make(map[string]int)
 	asns := make(map[uint32]int)
 	bands := make(map[string]int)
-	byRound := make([]RoundCount, 0, len(rounds))
+	byCohort := make([]CohortCount, 0, len(cohorts))
 	var allScores []int
 	total := 0
 
-	for _, r := range rounds {
-		byRound = append(byRound, RoundCount{Round: r.Round.Name, Count: len(r.Probes)})
+	for _, r := range cohorts {
+		byCohort = append(byCohort, CohortCount{Cohort: r.Cohort.Name, ProbeCount: len(r.Probes)})
 		total += len(r.Probes)
 
 		for _, p := range r.Probes {
@@ -96,13 +96,13 @@ func Report(rounds []SelectedRound, scoring config.ScoringConfig) CoverageReport
 	}
 
 	return CoverageReport{
-		ProbesByRound: byRound,
-		TotalProbes:   total,
-		UniqueH3Cells: uniqueCells,
-		Countries:     countries,
-		ASNs:          asns,
-		Bands:         bands,
-		Scores:        computeScoreStats(allScores),
+		ProbesByCohort: byCohort,
+		TotalProbes:    total,
+		UniqueH3Cells:  uniqueCells,
+		Countries:      countries,
+		ASNs:           asns,
+		Bands:          bands,
+		Scores:         computeScoreStats(allScores),
 	}
 }
 
@@ -135,9 +135,9 @@ func (r CoverageReport) Format() string {
 	fmt.Fprintf(&b, "Coverage Report\n")
 	fmt.Fprintf(&b, "Total probes: %d\n", r.TotalProbes)
 
-	fmt.Fprintf(&b, "\nProbes by round:\n")
-	for _, rc := range r.ProbesByRound {
-		fmt.Fprintf(&b, "  %s: %d\n", rc.Round, rc.Count)
+	fmt.Fprintf(&b, "\nProbes by cohort:\n")
+	for _, rc := range r.ProbesByCohort {
+		fmt.Fprintf(&b, "  %s: %d\n", rc.Cohort, rc.ProbeCount)
 	}
 
 	fmt.Fprintf(&b, "\nUnique H3 cells:\n")

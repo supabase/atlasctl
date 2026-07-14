@@ -29,7 +29,7 @@ func taggedInfo(id uint64, name, round string) plan.MsmInfo {
 // consistentSetup returns a desired map, state file, and FakeMsmClient that all
 // agree with each other — the baseline "nothing to do" scenario.
 func consistentSetup() (map[plan.MsmKey]plan.DesiredMsm, plan.StateFile, *plan.FakeMsmClient) {
-	key := plan.MsmKey{Name: "dns-canary", Round: "high-freq"}
+	key := plan.MsmKey{Name: "dns-canary", Cohort: "high-freq"}
 
 	desired := map[plan.MsmKey]plan.DesiredMsm{
 		key: {Target: "canary.supabase.co", Type: plan.MsmTypeDNS, Interval: 60, ProbeIDs: []uint32{1, 2}},
@@ -66,7 +66,7 @@ func TestLiveDiff_Consistent(t *testing.T) {
 
 func TestLiveDiff_Orphan(t *testing.T) {
 	// State is empty, but the API has a measurement with our tag.
-	orphanKey := plan.MsmKey{Name: "old-measurement", Round: "mid-freq"}
+	orphanKey := plan.MsmKey{Name: "old-measurement", Cohort: "mid-freq"}
 	live := taggedInfo(99999, "old-measurement", "mid-freq")
 
 	client := &plan.FakeMsmClient{
@@ -116,7 +116,7 @@ func TestLiveDiff_OrphanMalformedTag(t *testing.T) {
 
 func TestLiveDiff_Ghost(t *testing.T) {
 	// State references an MsmID that is absent from the live API list.
-	key := plan.MsmKey{Name: "dns-canary", Round: "high-freq"}
+	key := plan.MsmKey{Name: "dns-canary", Cohort: "high-freq"}
 
 	desired := map[plan.MsmKey]plan.DesiredMsm{
 		key: {Target: "canary.supabase.co", Type: plan.MsmTypeDNS, Interval: 60, ProbeIDs: []uint32{1}},
@@ -157,7 +157,7 @@ func TestLiveDiff_OrphanAndGhostTogether(t *testing.T) {
 	client := &plan.FakeMsmClient{ListResult: []plan.MsmInfo{orphan}}
 
 	desired := map[plan.MsmKey]plan.DesiredMsm{
-		{Name: "dns-canary", Round: "high-freq"}: {
+		{Name: "dns-canary", Cohort: "high-freq"}: {
 			Target: "canary.supabase.co", Type: plan.MsmTypeDNS, Interval: 60, ProbeIDs: []uint32{1},
 		},
 	}

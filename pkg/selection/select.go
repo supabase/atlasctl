@@ -11,31 +11,31 @@ import (
 	"github.com/supabase/atlasctl/pkg/snapshot"
 )
 
-// SelectedRound is the output of one round of probe selection.
-type SelectedRound struct {
-	Round  config.Round
+// SelectedCohorts is the output of one cohort of probe selection.
+type SelectedCohort struct {
+	Cohort config.Cohort
 	Probes []snapshot.Probe
 }
 
 // H3Occupancy tracks how many probes have been placed in each H3 cell
-// during a single round. It is reset between rounds.
+// during a single cohort. It is reset between cohorts.
 type H3Occupancy struct {
-	counts map[h3.Cell]int
+	probeCounts map[h3.Cell]int
 }
 
 // NewH3Occupancy returns an empty occupancy tracker.
 func NewH3Occupancy() *H3Occupancy {
-	return &H3Occupancy{counts: make(map[h3.Cell]int)}
+	return &H3Occupancy{probeCounts: make(map[h3.Cell]int)}
 }
 
 // Count returns the number of probes already assigned to cell.
 func (o *H3Occupancy) Count(cell h3.Cell) int {
-	return o.counts[cell]
+	return o.probeCounts[cell]
 }
 
 // Add increments the count for cell.
 func (o *H3Occupancy) Add(cell h3.Cell) {
-	o.counts[cell]++
+	o.probeCounts[cell]++
 }
 
 // candidate is the pre-computed representation of a probe used during selection.
@@ -47,8 +47,8 @@ type candidate struct {
 	coef  float64 // effective density coefficient from city overrides; ≥1.0
 }
 
-// Select runs the multi-round probe selection algorithm against snap using the
-// parameters in cfg. Each probe appears in at most one round (no overlap).
+// Select runs the multi-cohort probe selection algorithm against snap using the
+// parameters in cfg. Each probe appears in at most one cohort (no overlap).
 //
 // The algorithm:
 //  1. Filter hard-excluded probes.
@@ -56,20 +56,20 @@ type candidate struct {
 //  3. Reorder by continental interleaving: within each band tier, round-robin
 //     through the six geographic zones so no single region dominates.
 //  4. Pre-compute per-cell density coefficient from city config.
-//  5. For each round, walk the interleaved list in order, skipping
+//  5. For each cohort, walk the interleaved list in order, skipping
 //     already-selected probes and H3 cells that have reached capacity,
-//     until the round target is met.
+//     until the cohort target is met.
 //
-// Rounds are processed in the order they appear in cfg. Context cancellation is
-// checked between rounds.
-func Select(ctx context.Context, snap snapshot.Snapshot, cfg config.Config) ([]SelectedRound, error) {
+// Cohorts are processed in the order they appear in cfg. Context cancellation is
+// checked between cohorts.
+func Select(ctx context.Context, snap snapshot.Snapshot, cfg config.Config) ([]SelectedCohort, error) {
 	res := cfg.GeoDiversity.H3Resolution
 
 	// Step 1+2: build candidates, filter excluded, score, sort.
 	candidates := buildCandidates(snap.Probes, cfg, res)
 
 	// Step 3: reorder by continental interleaving within each band tier.
-	// This ensures that within a round, no single geographic zone can fill all
+	// This ensures that within a cohort, no single geographic zone can fill all
 	// slots before other zones have had a turn — regardless of how scoring weights
 	// are tuned.
 	candidates = interleaveContinents(candidates)
@@ -85,27 +85,27 @@ func Select(ctx context.Context, snap snapshot.Snapshot, cfg config.Config) ([]S
 		}
 	}
 
-	// Step 5: round-by-round selection.
+	// Step 5: cohort-by-cohort selection.
 	selected := make(map[uint32]struct{}, len(candidates))
-	rounds := make([]SelectedRound, 0, len(cfg.Rounds))
+	cohorts := make([]SelectedCohort, 0, len(cfg.Cohorts))
 
-	for _, roundCfg := range cfg.Rounds {
+	for _, cohortCfg := range cfg.Cohorts {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
 
 		occ := NewH3Occupancy()
-		probes := make([]snapshot.Probe, 0, roundCfg.Count)
+		probes := make([]snapshot.Probe, 0, cohortCfg.ProbeCount)
 
 		for i := range candidates {
-			if len(probes) >= roundCfg.Count {
+			if len(probes) >= cohortCfg.ProbeCount {
 				break
 			}
 			cand := &candidates[i]
 			if _, seen := selected[cand.probe.ID]; seen {
 				continue
 			}
-			cap := cellCapacity(roundCfg.MaxProbesPerCell, cellCoef[cand.cell])
+			cap := cellCapacity(cohortCfg.MaxProbesPerCell, cellCoef[cand.cell])
 			if occ.Count(cand.cell) >= cap {
 				continue
 			}
@@ -114,10 +114,10 @@ func Select(ctx context.Context, snap snapshot.Snapshot, cfg config.Config) ([]S
 			selected[cand.probe.ID] = struct{}{}
 		}
 
-		rounds = append(rounds, SelectedRound{Round: roundCfg, Probes: probes})
+		cohorts = append(cohorts, SelectedCohort{Cohort: cohortCfg, Probes: probes})
 	}
 
-	return rounds, nil
+	return cohorts, nil
 }
 
 // buildCandidates filters hard-excluded probes, computes per-probe scoring
@@ -155,7 +155,7 @@ func buildCandidates(probes []snapshot.Probe, cfg config.Config, res int) []cand
 }
 
 // cellCapacity returns the maximum number of probes allowed in a cell for one
-// round. coef scales the base maximum: >1.0 relaxes it, <1.0 tightens it.
+// cohort. coef scales the base maximum: >1.0 relaxes it, <1.0 tightens it.
 // The result is always at least 1 so a city never blocks a region entirely.
 func cellCapacity(baseMax int, coef float64) int {
 	if coef == 1.0 {

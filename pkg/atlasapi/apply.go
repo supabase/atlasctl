@@ -38,7 +38,7 @@ func (c *ApplyClient) CreateMeasurement(ctx context.Context, spec plan.MsmSpec) 
 	ms.ApiKey(c.MsmClient.APIKey)
 	ms.Verbose(c.MsmClient.Verbose)
 
-	desc := c.MsmClient.TagCodec.Format(spec.Key.Name, spec.Key.Round)
+	desc := c.MsmClient.TagCodec.Format(spec.Key.Name, spec.Key.Cohort)
 	baseOpts := &goat.BaseOptions{Interval: uint(spec.Interval)}
 	af := uint(spec.AF)
 

@@ -10,6 +10,10 @@ atlasctl applies the same workflow as Terraform or Pulumi to RIPE Atlas: write a
 
 The challenge is operational. RIPE Atlas measurements are created individually, probe sets drift as probes connect and disconnect, and tracking which measurement IDs belong to which logical target requires bookkeeping. atlasctl handles all of that. The operator writes a config file and runs four commands. The tool does the rest.
 
+## Cohorts
+
+atlasctl organizes probes into cohorts — named, non-overlapping groups built by the selection algorithm. Each probe belongs to exactly one cohort. Every (measurement, cohort) pair becomes one RIPE Atlas measurement with its own ID. This (name, cohort) pairing is the core resource identity throughout the workflow, config, state file, and drift detection.
+
 ## Workflow
 
 ```
@@ -20,10 +24,10 @@ The challenge is operational. RIPE Atlas measurements are created individually, 
    atlasctl refresh      fetch & cache all connected probes
        |
        v
-   atlasctl select       score, rank, and assign probes to rounds
+   atlasctl select       score, rank, and assign probes to cohorts
        |                 (no API calls -- operates on local snapshot)
        v
-  probe lists per round
+  probe lists per cohort
        |
        v
    atlasctl plan  <----  state.yaml   (measurement ID mappings)
@@ -61,14 +65,14 @@ Previous snapshot was 6 days old.
 
 ### select
 
-Runs the probe selection algorithm against the local snapshot and prints a coverage report. Optionally writes per-round GeoJSON files for visual review in geojson.io or kepler.gl.
+Runs the probe selection algorithm against the local snapshot and prints a coverage report. Optionally writes per-cohort GeoJSON files for visual review in geojson.io or kepler.gl.
 
 ```
 $ atlasctl select
 
-Round high-freq: 30 probes across 30 H3 cells, 14 ASNs, 8 countries
-Round mid-freq:  60 probes across 52 H3 cells, 22 ASNs, 12 countries
-Round low-freq:  100 probes across 71 H3 cells, 38 ASNs, 18 countries
+Cohort high-freq: 30 probes across 30 H3 cells, 14 ASNs, 8 countries
+Cohort mid-freq:  60 probes across 52 H3 cells, 22 ASNs, 12 countries
+Cohort low-freq:  100 probes across 71 H3 cells, 38 ASNs, 18 countries
 Total: 190 unique probes
 ```
 
@@ -81,7 +85,7 @@ Compares the desired state (config measurements with selected probes) against th
 ```
 $ atlasctl plan
 
-KIND    NAME              ROUND      DETAILS
+KIND    NAME              cohort      DETAILS
 add     dns-canary        high-freq  id=12345678 +2 probes
 remove  dns-canary        high-freq  id=12345678 -1 probes
 noop    dns-canary        mid-freq   id=12345679
@@ -92,7 +96,7 @@ stop    ping-old          low-freq   id=12345600
 
 If the state file is absent (first run), `plan` treats all desired measurements as new creates.
 
-`plan` also prints a projected credit burn based on the desired state: probe count, measurement type, and interval per (measurement, round) pair, rolled up to daily and weekly totals.
+`plan` also prints a projected credit burn based on the desired state: probe count, measurement type, and interval per (measurement, cohort) pair, rolled up to daily and weekly totals.
 
 ```
 CREDIT BURN (projected)
@@ -132,12 +136,12 @@ Applied: 1 created, 1 updated, 1 stopped.
 
 ## Config
 
-A single YAML file describes rounds, measurements, and probe selection criteria.
+A single YAML file describes cohorts, measurements, and probe selection criteria.
 
 ```yaml
-# Rounds define frequency tiers. Each (measurement, round) pair becomes one
+# Cohorts define named probe groups. Each (measurement, cohort) pair becomes one
 # RIPE Atlas measurement.
-rounds:
+cohorts:
   - name: high-freq
     count: 30
     interval_seconds: 60
@@ -153,22 +157,22 @@ rounds:
     interval_seconds: 900
     max_probes_per_cell: 3
 
-# Measurements define what to measure and which rounds to apply it to.
+# Measurements define what to measure and which cohorts to apply it to.
 measurements:
   - name: dns-canary
     type: dns
     target: canary.supabase.co
-    rounds: [high-freq, mid-freq, low-freq]
+    cohorts: [high-freq, mid-freq, low-freq]
 
   - name: tls-canary
     type: tls
     target: canary.supabase.co
-    rounds: [high-freq, mid-freq]
+    cohorts: [high-freq, mid-freq]
 
   - name: ping-edge
     type: ping
     target: 162.159.36.1
-    rounds: [low-freq]
+    cohorts: [low-freq]
 
 # Scoring controls which probes are preferred. All sections are optional.
 scoring:
@@ -237,9 +241,9 @@ cities:
 
 ## Probe selection
 
-See [docs/bands-rounds-explainer.md](docs/bands-rounds-explainer.md) for a detailed explanation of how scoring bands, continental interleaving, and rounds interact, including how to detect degenerate scoring configurations.
+See [docs/bands-cohorts-explainer.md](docs/bands-cohorts-explainer.md) for a detailed explanation of how scoring bands, continental interleaving, and cohorts interact, including how to detect degenerate scoring configurations.
 
-Probe selection is the central design problem. The RIPE Atlas probe pool has ~12,000 connected probes. atlasctl needs to pick a small subset that covers the right networks and geographies, assign them to frequency tiers, and keep those assignments stable as probes connect and disconnect over time.
+Probe selection is the central design problem. The RIPE Atlas probe pool has ~12,000 connected probes. atlasctl needs to pick a small subset that covers the right networks and geographies, assign them to cohorts, and keep those assignments stable as probes connect and disconnect over time.
 
 ### Scoring
 
@@ -258,7 +262,7 @@ Every probe starts with a base score of 1. Matching scoring criteria add to the 
 
 ### Bands and deterministic assignment
 
-Pure score-sorted selection is fragile: one probe disconnecting can cascade across all three rounds. atlasctl avoids this by discretising scores into four bands, then using a deterministic hash of the probe ID as the tiebreaker within each band.
+Pure score-sorted selection is fragile: one probe disconnecting can cascade across all three cohorts. atlasctl avoids this by discretising scores into four bands, then using a deterministic hash of the probe ID as the tiebreaker within each band.
 
 ```
   Sort key: (band DESC, FNV-1a(probe_id) ASC)
@@ -271,9 +275,9 @@ Pure score-sorted selection is fragile: one probe disconnecting can cascade acro
 
 A probe's band changes only when its score crosses a threshold (requiring a tag or ASN change on the probe itself, which is rare). Within a band, `FNV-1a(probe_id)` is perfectly stable because probe IDs are permanent integers. When a probe disconnects, only its slot opens. The next probe in hash order fills it. No cascade beyond that one slot.
 
-### Round assignment
+### Cohort assignment
 
-Rounds are filled in order of decreasing frequency. A probe selected for `high-freq` is excluded from all subsequent rounds. Each round walks the sorted candidate list (after prior-round probes are removed) and fills slots until the round's `count` is reached.
+Cohorts are filled in definition order. A probe selected for an earlier cohort is excluded from all subsequent cohorts. Each cohort walks the sorted candidate list (after prior-cohort probes are removed) and fills slots until the cohort's `count` is reached.
 
 ```
   high-freq  30 probes   first responders, maximum geographic spread
@@ -287,7 +291,7 @@ Two mechanisms work together to spread probes across the globe: continental inte
 
 #### Continental interleaving
 
-The RIPE Atlas probe pool is heavily concentrated in the US and Europe. Left to pure score ordering, a round of 40 probes can easily fill all slots from those two regions, leaving Asia-Pacific, Latin America, and Africa unrepresented regardless of how scoring weights are tuned.
+The RIPE Atlas probe pool is heavily concentrated in the US and Europe. Left to pure score ordering, a cohort of 40 probes can easily fill all slots from those two regions, leaving Asia-Pacific, Latin America, and Africa unrepresented regardless of how scoring weights are tuned.
 
 After scoring, probes are grouped into six continental zones:
 
@@ -300,7 +304,7 @@ After scoring, probes are grouped into six continental zones:
 | MENA  | Middle East and North Africa                       |
 | SSA   | Sub-Saharan Africa                                 |
 
-Within each band tier, the selection walk interleaves zones in round-robin order before any zone gets a second pick. The effect is easiest to see with an example. Suppose a round has these Band B candidates:
+Within each band tier, the selection walk interleaves zones in round-robin order before any zone gets a second pick. The effect is easiest to see with an example. Suppose a cohort has these Band B candidates:
 
 ```
   NA:    [probe 1, probe 2, probe 3, probe 4, probe 5]
@@ -324,7 +328,7 @@ Band priority is fully preserved: Band A probes from any zone are exhausted befo
 
 #### H3 cell limits
 
-Each probe is mapped to an H3 hexagonal cell. The `max_probes_per_cell` limit per round prevents geographic clustering within a zone. City density overrides allow a higher limit in specific metros.
+Each probe is mapped to an H3 hexagonal cell. The `max_probes_per_cell` limit per cohort prevents geographic clustering within a zone. City density overrides allow a higher limit in specific metros.
 
 | Resolution | Avg cell area  | Useful for              |
 |------------|----------------|-------------------------|
@@ -337,14 +341,14 @@ Each probe is mapped to an H3 hexagonal cell. The `max_probes_per_cell` limit pe
 
 | Event scope       | Source                    | Effective cadence                                    |
 |-------------------|---------------------------|------------------------------------------------------|
-| Global outage     | Round 1 (30 probes)       | ~60s, multiple probes fail simultaneously            |
-| Regional (US, EU) | Rounds 1+2 (90 probes)    | 60s from round 1 probes in region, 5m from round 2  |
-| ISP-specific      | Rounds 1+2+3 (190 probes) | Depends on probe count in that ASN                  |
-| Single city       | Mostly rounds 2+3         | 5-15 min                                             |
+| Global outage     | Cohort 1 (30 probes)       | ~60s, multiple probes fail simultaneously            |
+| Regional (US, EU) | Cohorts 1+2 (90 probes)    | 60s from cohort 1 probes in region, 5m from cohort 2  |
+| ISP-specific      | Cohorts 1+2+3 (190 probes) | Depends on probe count in that ASN                  |
+| Single city       | Mostly cohorts 2+3         | 5-15 min                                             |
 
 ## Resource model
 
-A managed measurement is identified by `(measurement_name, round_name)`. This pair maps to exactly one RIPE Atlas measurement ID.
+A managed measurement is identified by `(measurement_name, cohort_name)`. This pair maps to exactly one RIPE Atlas measurement ID.
 
 ```
   config identity                 RIPE Atlas
@@ -359,7 +363,7 @@ Structural attributes (target, measurement type, interval, address family) are i
 
 | Situation                                        | Action                 | Credits  |
 |--------------------------------------------------|------------------------|----------|
-| New `(name, round)` in config, no existing msm   | Create measurement     | Yes      |
+| New `(name, cohort)` in config, no existing msm   | Create measurement     | Yes      |
 | Existing measurement, probe list changed         | Add/remove probes      | No       |
 | Existing measurement, structural attribute changed| Stop old, create new  | Yes      |
 | Existing measurement, no changes                 | No-op                  | No       |
@@ -394,7 +398,7 @@ probe_snapshot: probes/snapshot.json
 Every measurement atlasctl creates includes a structured description tag:
 
 ```
-[atlasctl:<measurement_name>:<round_name>]
+[atlasctl:<measurement_name>:<cohort_name>]
 ```
 
 This makes managed measurements discoverable via the RIPE Atlas API even if the state file is lost:
@@ -415,9 +419,11 @@ Drift is reported as warnings, not errors. The operator decides how to resolve.
 
 ## Downstream pipeline
 
-`state.yaml` records the measurement IDs of all active measurements. Any tool that can subscribe to the RIPE Atlas streaming WebSocket (`wss://atlas-stream.ripe.net/stream/`) can consume results using those IDs. [atlas_exporter](https://github.com/czerwonk/atlas_exporter) is one option: it exposes results as Prometheus metrics.
+`state.yaml` records the measurement IDs of all active measurements. Those IDs are the hand-off point to whatever consumes results — see the [RIPE Atlas measurements API](https://atlas.ripe.net/docs/apis/rest-api-reference/measurements/) for what is available per measurement ID.
 
-In addition to managed measurements, RIPE Atlas has thousands of ongoing public measurements created by researchers and network operators. These can be subscribed to at no credit cost and are useful for incident correlation. If a managed canary fails from AT&T probes at the same time a public google.com measurement fails from the same probes, the failure is almost certainly network-level.
+The authors use atlasctl together with [atlas_exporter](https://github.com/czerwonk/atlas_exporter) to expose measurement results as Prometheus metrics.
+
+In addition to managed measurements, RIPE Atlas has thousands of ongoing public measurements created by researchers and network operators. These can be consumed at no credit cost and are useful for incident correlation. If a managed canary fails from AT&T probes at the same time a public google.com measurement fails from the same probes, the failure is almost certainly network-level.
 
 ## Constraints
 
@@ -433,17 +439,28 @@ Domain logic lives in importable packages with no dependency on the CLI layer. T
 pkg/
   config/     config loading and validation
   snapshot/   probe cache: fetch, persist, load
-  selection/  probe scoring, band assignment, H3 diversity, round selection
+  selection/  probe scoring, band assignment, H3 diversity, cohort selection
+  atlasapi/   RIPE Atlas API wrapping
   plan/       state file, desired-vs-current diff, drift detection, apply
-
-internal/
-  goatadapter/  adapts the goat library to pkg/ interfaces
 
 cmd/
   atlasctl/     CLI; thin wrappers over pkg/
 ```
 
 The `goat` library (github.com/robert-kisteleki/goat) is the only dependency on the RIPE Atlas API. It is confined to `internal/goatadapter`. All `pkg/` packages are tested with fakes and have no goat import.
+
+## Required API key permissions
+
+Generate an API key at [atlas.ripe.net/keys/](https://atlas.ripe.net/keys/) and enable the following permissions:
+
+| Permission | Purpose |
+|------------|---------|
+| List your measurements | Read measurement state during plan and refresh |
+| Show information about your probes | Resolve probe metadata during probe selection |
+| Schedule a new measurement | Create measurements on apply |
+
+Additional permissions may be required as provider capabilities expand.
+
 
 ## Requirements
 

@@ -67,14 +67,14 @@ func Apply(
 		case ChangeNoOp:
 			log.Debug().
 				Str("name", ch.Key.Name).
-				Str("round", ch.Key.Round).
+				Str("cohort", ch.Key.Cohort).
 				Msg("no change required")
 
 		case ChangeCreate:
 			if opts.DryRun {
 				log.Info().
 					Str("name", ch.Key.Name).
-					Str("round", ch.Key.Round).
+					Str("cohort", ch.Key.Cohort).
 					Str("type", string(ch.Desired.Type)).
 					Str("target", ch.Desired.Target).
 					Msg("[dry-run] would create measurement")
@@ -92,17 +92,17 @@ func Apply(
 			if err != nil {
 				log.Error().Err(err).
 					Str("name", ch.Key.Name).
-					Str("round", ch.Key.Round).
+					Str("cohort", ch.Key.Cohort).
 					Msg("create measurement failed")
-				errs = append(errs, fmt.Errorf("create %s/%s: %w", ch.Key.Name, ch.Key.Round, err))
+				errs = append(errs, fmt.Errorf("create %s/%s: %w", ch.Key.Name, ch.Key.Cohort, err))
 				continue
 			}
 			log.Info().
 				Uint64("id", id).
 				Str("name", ch.Key.Name).
-				Str("round", ch.Key.Round).
+				Str("cohort", ch.Key.Cohort).
 				Msg("created measurement")
-			out.SetRecord(ch.Key.Name, ch.Key.Round, MsmRecord{
+			out.SetRecord(ch.Key.Name, ch.Key.Cohort, MsmRecord{
 				MsmID:    id,
 				Target:   ch.Desired.Target,
 				Type:     string(ch.Desired.Type),
@@ -116,7 +116,7 @@ func Apply(
 				log.Info().
 					Uint64("id", ch.MsmID).
 					Str("name", ch.Key.Name).
-					Str("round", ch.Key.Round).
+					Str("cohort", ch.Key.Cohort).
 					Msg("[dry-run] would stop measurement")
 				continue
 			}
@@ -124,24 +124,25 @@ func Apply(
 				log.Error().Err(err).
 					Uint64("id", ch.MsmID).
 					Str("name", ch.Key.Name).
-					Str("round", ch.Key.Round).
+					Str("cohort", ch.Key.Cohort).
 					Msg("stop measurement failed")
-				errs = append(errs, fmt.Errorf("stop %s/%s (id=%d): %w", ch.Key.Name, ch.Key.Round, ch.MsmID, err))
+				errs = append(errs, fmt.Errorf("stop %s/%s (id=%d): %w",
+					ch.Key.Name, ch.Key.Cohort, ch.MsmID, err))
 				continue
 			}
 			log.Info().
 				Uint64("id", ch.MsmID).
 				Str("name", ch.Key.Name).
-				Str("round", ch.Key.Round).
+				Str("cohort", ch.Key.Cohort).
 				Msg("stopped measurement")
-			out.DeleteRecord(ch.Key.Name, ch.Key.Round)
+			out.DeleteRecord(ch.Key.Name, ch.Key.Cohort)
 
 		case ChangeAddProbes:
 			if opts.DryRun {
 				log.Info().
 					Uint64("id", ch.MsmID).
 					Str("name", ch.Key.Name).
-					Str("round", ch.Key.Round).
+					Str("cohort", ch.Key.Cohort).
 					Interface("probe_ids", ch.ProbeIDs).
 					Msg("[dry-run] would add probes")
 				continue
@@ -150,19 +151,20 @@ func Apply(
 				log.Error().Err(err).
 					Uint64("id", ch.MsmID).
 					Str("name", ch.Key.Name).
-					Str("round", ch.Key.Round).
+					Str("cohort", ch.Key.Cohort).
 					Msg("add probes failed")
-				errs = append(errs, fmt.Errorf("add probes %s/%s (id=%d): %w", ch.Key.Name, ch.Key.Round, ch.MsmID, err))
+				errs = append(errs, fmt.Errorf("add probes %s/%s (id=%d): %w",
+					ch.Key.Name, ch.Key.Cohort, ch.MsmID, err))
 				continue
 			}
 			log.Info().
 				Uint64("id", ch.MsmID).
 				Str("name", ch.Key.Name).
-				Str("round", ch.Key.Round).
+				Str("cohort", ch.Key.Cohort).
 				Msg("added probes")
-			if rec, ok := out.GetRecord(ch.Key.Name, ch.Key.Round); ok {
+			if rec, ok := out.GetRecord(ch.Key.Name, ch.Key.Cohort); ok {
 				rec.ProbeIDs = mergeProbeIDs(rec.ProbeIDs, ch.ProbeIDs)
-				out.SetRecord(ch.Key.Name, ch.Key.Round, rec)
+				out.SetRecord(ch.Key.Name, ch.Key.Cohort, rec)
 			}
 
 		case ChangeRemoveProbes:
@@ -170,7 +172,7 @@ func Apply(
 				log.Info().
 					Uint64("id", ch.MsmID).
 					Str("name", ch.Key.Name).
-					Str("round", ch.Key.Round).
+					Str("cohort", ch.Key.Cohort).
 					Interface("probe_ids", ch.ProbeIDs).
 					Msg("[dry-run] would remove probes")
 				continue
@@ -179,19 +181,20 @@ func Apply(
 				log.Error().Err(err).
 					Uint64("id", ch.MsmID).
 					Str("name", ch.Key.Name).
-					Str("round", ch.Key.Round).
+					Str("cohort", ch.Key.Cohort).
 					Msg("remove probes failed")
-				errs = append(errs, fmt.Errorf("remove probes %s/%s (id=%d): %w", ch.Key.Name, ch.Key.Round, ch.MsmID, err))
+				errs = append(errs, fmt.Errorf("remove probes %s/%s (id=%d): %w",
+					ch.Key.Name, ch.Key.Cohort, ch.MsmID, err))
 				continue
 			}
 			log.Info().
 				Uint64("id", ch.MsmID).
 				Str("name", ch.Key.Name).
-				Str("round", ch.Key.Round).
+				Str("cohort", ch.Key.Cohort).
 				Msg("removed probes")
-			if rec, ok := out.GetRecord(ch.Key.Name, ch.Key.Round); ok {
+			if rec, ok := out.GetRecord(ch.Key.Name, ch.Key.Cohort); ok {
 				rec.ProbeIDs = subtractProbeIDs(rec.ProbeIDs, ch.ProbeIDs)
-				out.SetRecord(ch.Key.Name, ch.Key.Round, rec)
+				out.SetRecord(ch.Key.Name, ch.Key.Cohort, rec)
 			}
 		}
 	}
@@ -210,8 +213,8 @@ func cloneState(sf StateFile) StateFile {
 	out.LastApplied = sf.LastApplied
 	out.ProbeSnapshot = sf.ProbeSnapshot
 	out.ProbeSnapshotFetched = sf.ProbeSnapshotFetched
-	for name, rounds := range sf.Measurements {
-		for round, rec := range rounds {
+	for name, cohorts := range sf.Measurements {
+		for cohort, rec := range cohorts {
 			cloned := MsmRecord{
 				MsmID:    rec.MsmID,
 				Target:   rec.Target,
@@ -220,7 +223,7 @@ func cloneState(sf StateFile) StateFile {
 				Interval: rec.Interval,
 				ProbeIDs: append([]uint32(nil), rec.ProbeIDs...),
 			}
-			out.SetRecord(name, round, cloned)
+			out.SetRecord(name, cohort, cloned)
 		}
 	}
 	return out

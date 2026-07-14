@@ -1,17 +1,17 @@
 snapshot: probes/snapshot.json
 state: state.yaml
 
-rounds:
+cohorts:
   - name: high-freq
-    count: 30
+    probe_count: 30
     interval_seconds: 60
     max_probes_per_cell: 1
   - name: mid-freq
-    count: 60
+    probe_count: 60
     interval_seconds: 300
     max_probes_per_cell: 2
   - name: low-freq
-    count: 100
+    probe_count: 100
     interval_seconds: 900
     max_probes_per_cell: 3
 
@@ -20,15 +20,15 @@ measurements:
     type: dns
     target: canary.supabase.co
     query_type: A
-    rounds: [high-freq, mid-freq, low-freq]
+    cohorts: [high-freq, mid-freq, low-freq]
   - name: tls-canary
     type: tls
     target: canary.supabase.co
-    rounds: [high-freq, mid-freq]
+    cohorts: [high-freq, mid-freq]
   - name: ping-edge
     type: ping
     target: 162.159.36.1
-    rounds: [low-freq]
+    cohorts: [low-freq]
 
 scoring:
   asn:

@@ -6,13 +6,13 @@ import (
 )
 
 // MsmKey uniquely identifies a measurement within atlasctl as the pair
-// (measurement name, round name).
+// (measurement name, cohort name).
 type MsmKey struct {
-	Name  string
-	Round string
+	Name   string
+	Cohort string
 }
 
-// DesiredMsm describes the fully-resolved desired state for one (name, round) pair.
+// DesiredMsm describes the fully-resolved desired state for one (name, cohort) pair.
 type DesiredMsm struct {
 	Target   string
 	Type     MsmType
@@ -53,33 +53,33 @@ type Change struct {
 type Changeset []Change
 
 // DesiredState builds the desired measurement map from the config and the
-// selected probe rounds. Keys are (measurement name, round name); values
+// selected probe cohorts. Keys are (measurement name, cohort name); values
 // describe the fully-resolved target state including probe IDs.
-func DesiredState(cfg config.Config, rounds []selection.SelectedRound) map[MsmKey]DesiredMsm {
-	// Index selected rounds by name for O(1) lookup.
-	roundProbes := make(map[string][]uint32, len(rounds))
-	for _, r := range rounds {
+func DesiredState(cfg config.Config, cohorts []selection.SelectedCohort) map[MsmKey]DesiredMsm {
+	// Index selected cohorts by name for O(1) lookup.
+	cohortProbes := make(map[string][]uint32, len(cohorts))
+	for _, r := range cohorts {
 		ids := make([]uint32, len(r.Probes))
 		for i, p := range r.Probes {
 			ids[i] = p.ID
 		}
-		roundProbes[r.Round.Name] = ids
+		cohortProbes[r.Cohort.Name] = ids
 	}
 
-	roundInterval := make(map[string]int, len(cfg.Rounds))
-	for _, r := range cfg.Rounds {
-		roundInterval[r.Name] = r.IntervalSeconds
+	cohortInterval := make(map[string]int, len(cfg.Cohorts))
+	for _, r := range cfg.Cohorts {
+		cohortInterval[r.Name] = r.IntervalSeconds
 	}
 
 	desired := make(map[MsmKey]DesiredMsm)
 	for _, msm := range cfg.Measurements {
-		for _, roundName := range msm.Rounds {
-			desired[MsmKey{Name: msm.Name, Round: roundName}] = DesiredMsm{
+		for _, cohortName := range msm.Cohorts {
+			desired[MsmKey{Name: msm.Name, Cohort: cohortName}] = DesiredMsm{
 				Target:   msm.Target,
 				Type:     MsmType(msm.Type),
 				AF:       msm.AF,
-				Interval: roundInterval[roundName],
-				ProbeIDs: roundProbes[roundName],
+				Interval: cohortInterval[cohortName],
+				ProbeIDs: cohortProbes[cohortName],
 			}
 		}
 	}
@@ -97,7 +97,7 @@ func Diff(desired map[MsmKey]DesiredMsm, state StateFile) Changeset {
 
 	// Pass 1: reconcile each desired entry against state.
 	for key, want := range desired {
-		rec, exists := state.GetRecord(key.Name, key.Round)
+		rec, exists := state.GetRecord(key.Name, key.Cohort)
 		if !exists {
 			d := want
 			changes = append(changes, Change{Kind: ChangeCreate, Key: key, Desired: &d})
@@ -131,9 +131,9 @@ func Diff(desired map[MsmKey]DesiredMsm, state StateFile) Changeset {
 	}
 
 	// Pass 2: stop anything in state that is no longer desired.
-	for msmName, rounds := range state.Measurements {
-		for roundName, rec := range rounds {
-			key := MsmKey{Name: msmName, Round: roundName}
+	for msmName, cohorts := range state.Measurements {
+		for cohortName, rec := range cohorts {
+			key := MsmKey{Name: msmName, Cohort: cohortName}
 			if _, ok := desired[key]; !ok {
 				changes = append(changes, Change{Kind: ChangeStop, Key: key, MsmID: rec.MsmID})
 			}
