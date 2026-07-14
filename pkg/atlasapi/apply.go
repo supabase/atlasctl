@@ -45,13 +45,13 @@ func (c *ApplyClient) CreateMeasurement(ctx context.Context, spec plan.MsmSpec) 
 
 	var defErr error
 	switch spec.Type {
-	case "dns":
+	case plan.MsmTypeDNS:
 		defErr = ms.AddDns(desc, spec.Target, af, baseOpts, &goat.DnsOptions{Type: "A"})
-	case "ping":
+	case plan.MsmTypePing:
 		defErr = ms.AddPing(desc, spec.Target, af, baseOpts, nil)
-	case "tls":
+	case plan.MsmTypeTLS:
 		defErr = ms.AddTls(desc, spec.Target, af, baseOpts, nil)
-	case "traceroute":
+	case plan.MsmTypeTraceroute:
 		defErr = ms.AddTrace(desc, spec.Target, af, baseOpts, nil)
 	default:
 		return 0, fmt.Errorf("unsupported measurement type %q", spec.Type)

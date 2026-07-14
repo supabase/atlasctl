@@ -20,7 +20,7 @@ var nopLog = zerolog.Nop()
 // createChangeset builds a Changeset with a single ChangeCreate.
 func createChangeset(name, cohort, target string, typ plan.MsmType, interval int, probeIDs []uint32) plan.Changeset {
 	key := plan.MsmKey{Name: name, Cohort: cohort}
-	desired := plan.DesiredMsm{Target: target, Type: typ, Interval: interval, ProbeIDs: probeIDs}
+	desired := plan.MsmSpec{Key: key, Target: target, Type: typ, Interval: interval, ProbeIDs: probeIDs}
 	return plan.Changeset{
 		{Kind: plan.ChangeCreate, Key: key, Desired: &desired},
 	}
@@ -113,7 +113,7 @@ func TestApply_DryRun(t *testing.T) {
 
 	key := plan.MsmKey{Name: "dns-canary", Cohort: "high-freq"}
 	cs := plan.Changeset{
-		{Kind: plan.ChangeCreate, Key: plan.MsmKey{Name: "new-msm", Cohort: "low"}, Desired: &plan.DesiredMsm{
+		{Kind: plan.ChangeCreate, Key: plan.MsmKey{Name: "new-msm", Cohort: "low"}, Desired: &plan.MsmSpec{
 			Target: "t.example.com", Type: plan.MsmTypePing, Interval: 120, ProbeIDs: []uint32{10},
 		}},
 		{Kind: plan.ChangeStop, Key: key, MsmID: 99999},
@@ -142,10 +142,10 @@ func TestApply_ContextCancel(t *testing.T) {
 	client := &cancelAfterFirstCreate{cancel: cancel}
 
 	cs := plan.Changeset{
-		{Kind: plan.ChangeCreate, Key: plan.MsmKey{Name: "msm-a", Cohort: "r1"}, Desired: &plan.DesiredMsm{
+		{Kind: plan.ChangeCreate, Key: plan.MsmKey{Name: "msm-a", Cohort: "r1"}, Desired: &plan.MsmSpec{
 			Target: "a.example.com", Type: plan.MsmTypeDNS, Interval: 60, ProbeIDs: []uint32{1},
 		}},
-		{Kind: plan.ChangeCreate, Key: plan.MsmKey{Name: "msm-b", Cohort: "r1"}, Desired: &plan.DesiredMsm{
+		{Kind: plan.ChangeCreate, Key: plan.MsmKey{Name: "msm-b", Cohort: "r1"}, Desired: &plan.MsmSpec{
 			Target: "b.example.com", Type: plan.MsmTypeDNS, Interval: 60, ProbeIDs: []uint32{2},
 		}},
 	}
@@ -167,10 +167,10 @@ func TestApply_APIError(t *testing.T) {
 	errThenOk := &errorOnFirstCreate{err: sentinel}
 
 	cs := plan.Changeset{
-		{Kind: plan.ChangeCreate, Key: plan.MsmKey{Name: "msm-fail", Cohort: "r1"}, Desired: &plan.DesiredMsm{
+		{Kind: plan.ChangeCreate, Key: plan.MsmKey{Name: "msm-fail", Cohort: "r1"}, Desired: &plan.MsmSpec{
 			Target: "fail.example.com", Type: plan.MsmTypeDNS, Interval: 60, ProbeIDs: []uint32{1},
 		}},
-		{Kind: plan.ChangeCreate, Key: plan.MsmKey{Name: "msm-ok", Cohort: "r1"}, Desired: &plan.DesiredMsm{
+		{Kind: plan.ChangeCreate, Key: plan.MsmKey{Name: "msm-ok", Cohort: "r1"}, Desired: &plan.MsmSpec{
 			Target: "ok.example.com", Type: plan.MsmTypeDNS, Interval: 60, ProbeIDs: []uint32{2},
 		}},
 	}
