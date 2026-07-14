@@ -237,6 +237,8 @@ cities:
 
 ## Probe selection
 
+See [docs/bands-rounds-explainer.md](docs/bands-rounds-explainer.md) for a detailed explanation of how scoring bands, continental interleaving, and rounds interact, including how to detect degenerate scoring configurations.
+
 Probe selection is the central design problem. The RIPE Atlas probe pool has ~12,000 connected probes. atlasctl needs to pick a small subset that covers the right networks and geographies, assign them to frequency tiers, and keep those assignments stable as probes connect and disconnect over time.
 
 ### Scoring

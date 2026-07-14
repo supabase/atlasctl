@@ -28,6 +28,18 @@ type CoverageReport struct {
 	// Bands counts selected probes by score band.
 	// Key is the band letter (A/B/C/D) for JSON-friendliness.
 	Bands map[string]int `json:"bands"`
+	// Scores holds the min, median, and max raw score across all selected probes.
+	// A narrow spread (min ≈ max) indicates that scoring is not discriminating the
+	// probe pool and selection has degraded to continental round-robin.
+	Scores ScoreStats `json:"scores"`
+}
+
+// ScoreStats summarises the distribution of raw probe scores across all
+// selected probes. Used to detect degenerate scoring configurations.
+type ScoreStats struct {
+	Min    int `json:"min"`
+	Median int `json:"median"`
+	Max    int `json:"max"`
 }
 
 // RoundCount pairs a round name with its probe count.
@@ -55,6 +67,7 @@ func Report(rounds []SelectedRound, scoring config.ScoringConfig) CoverageReport
 	asns := make(map[uint32]int)
 	bands := make(map[string]int)
 	byRound := make([]RoundCount, 0, len(rounds))
+	var allScores []int
 	total := 0
 
 	for _, r := range rounds {
@@ -69,6 +82,7 @@ func Report(rounds []SelectedRound, scoring config.ScoringConfig) CoverageReport
 
 			score := Score(p, scoring)
 			bands[AssignBand(score, scoring.BandThresholds.Effective()).String()]++
+			allScores = append(allScores, score)
 
 			for _, res := range h3Resolutions {
 				cells[res][h3.LatLonToCell(p.Lat, p.Lon, res)] = struct{}{}
@@ -88,6 +102,24 @@ func Report(rounds []SelectedRound, scoring config.ScoringConfig) CoverageReport
 		Countries:     countries,
 		ASNs:          asns,
 		Bands:         bands,
+		Scores:        computeScoreStats(allScores),
+	}
+}
+
+// computeScoreStats returns min, median, and max from a slice of scores.
+// Returns zero values when the slice is empty.
+func computeScoreStats(scores []int) ScoreStats {
+	if len(scores) == 0 {
+		return ScoreStats{}
+	}
+	sorted := make([]int, len(scores))
+	copy(sorted, scores)
+	sort.Ints(sorted)
+	median := sorted[len(sorted)/2]
+	return ScoreStats{
+		Min:    sorted[0],
+		Median: median,
+		Max:    sorted[len(sorted)-1],
 	}
 }
 
@@ -134,6 +166,9 @@ func (r CoverageReport) Format() string {
 			fmt.Fprintf(&b, "  %s: %d\n", letter, n)
 		}
 	}
+
+	fmt.Fprintf(&b, "\nScore distribution:\n")
+	fmt.Fprintf(&b, "  min: %d  median: %d  max: %d\n", r.Scores.Min, r.Scores.Median, r.Scores.Max)
 
 	return b.String()
 }
