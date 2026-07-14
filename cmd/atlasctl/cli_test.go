@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -39,14 +38,14 @@ measurements:
 // return harmless fakes so tests only need to supply what they actually use.
 func testDeps(msmClient plan.MsmClient, applyClient plan.ApplyClient) Deps {
 	return Deps{
-		NewSnapshotClient: func(*uuid.UUID, bool) snapshot.Client {
+		NewSnapshotClient: func(string, bool) snapshot.Client {
 			return &snapshot.FakeClient{}
 		},
-		NewMsmClient: func(*uuid.UUID, bool, plan.TagCodec) plan.MsmClient {
-			return msmClient
+		NewMsmClient: func(string, bool, plan.TagCodec) (plan.MsmClient, error) {
+			return msmClient, nil
 		},
-		NewApplyClient: func(*uuid.UUID, bool, plan.TagCodec) plan.ApplyClient {
-			return applyClient
+		NewApplyClient: func(string, bool, plan.TagCodec) (plan.ApplyClient, error) {
+			return applyClient, nil
 		},
 	}
 }
@@ -132,9 +131,9 @@ func TestApply_DryRunFlag(t *testing.T) {
 	// Reuse fakeApply for NewMsmClient too: FakeApplyClient embeds FakeMsmClient
 	// so it satisfies plan.MsmClient.
 	deps := Deps{
-		NewSnapshotClient: func(*uuid.UUID, bool) snapshot.Client { return &snapshot.FakeClient{} },
-		NewMsmClient:      func(*uuid.UUID, bool, plan.TagCodec) plan.MsmClient { return fakeApply },
-		NewApplyClient:    func(*uuid.UUID, bool, plan.TagCodec) plan.ApplyClient { return fakeApply },
+		NewSnapshotClient: func(string, bool) snapshot.Client { return &snapshot.FakeClient{} },
+		NewMsmClient:      func(string, bool, plan.TagCodec) (plan.MsmClient, error) { return fakeApply, nil },
+		NewApplyClient:    func(string, bool, plan.TagCodec) (plan.ApplyClient, error) { return fakeApply, nil },
 	}
 
 	_, _, err := run(deps,
