@@ -21,7 +21,6 @@ func minimalCohort(name string, count, maxPerCell int) config.Cohort {
 	return config.Cohort{
 		Name:             name,
 		ProbeCount:       count,
-		IntervalSeconds:  60,
 		MaxProbesPerCell: maxPerCell,
 	}
 }

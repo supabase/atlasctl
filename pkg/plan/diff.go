@@ -57,21 +57,26 @@ func DesiredState(cfg config.Config, cohorts []selection.SelectedCohort) map[Msm
 		cohortProbes[r.Cohort.Name] = ids
 	}
 
-	cohortInterval := make(map[string]int, len(cfg.Cohorts))
-	for _, r := range cfg.Cohorts {
-		cohortInterval[r.Name] = r.IntervalSeconds
-	}
+	//TODO: need this anymore?
+	/*
+		cohortInterval := make(map[string]int, len(cfg.Cohorts))
+		for _, r := range cfg.Cohorts {
+			cohortInterval[r.Name] = r.IntervalSeconds
+		}
+	*/
 
 	desired := make(map[MsmKey]MsmSpec)
 	for _, msm := range cfg.Measurements {
 		for _, cohortName := range msm.Cohorts {
 			key := MsmKey{Name: msm.Name, Cohort: cohortName}
+
 			desired[key] = MsmSpec{
-				Key:      key,
-				Target:   msm.Target,
-				Type:     MsmType(msm.Type),
+				Key:    key,
+				Target: msm.Target,
+				Type:   MsmType(msm.Type),
+
 				AF:       msm.AF,
-				Interval: cohortInterval[cohortName],
+				Interval: msm.IntervalSeconds,
 				ProbeIDs: cohortProbes[cohortName],
 			}
 		}
@@ -99,7 +104,8 @@ func Diff(desired map[MsmKey]MsmSpec, state StateFile) Changeset {
 
 		if isStructuralChange(rec, want) {
 			// Stop the old measurement; create a new one with the full desired state.
-			changes = append(changes,
+			changes = append(
+				changes,
 				Change{Kind: ChangeStop, Key: key, MsmID: rec.MsmID},
 			)
 			d := want

@@ -4,29 +4,29 @@ state: state.yaml
 cohorts:
   - name: high-freq
     probe_count: 30
-    interval_seconds: 60
     max_probes_per_cell: 1
   - name: mid-freq
     probe_count: 60
-    interval_seconds: 300
     max_probes_per_cell: 2
   - name: low-freq
     probe_count: 100
-    interval_seconds: 900
     max_probes_per_cell: 3
 
 measurements:
   - name: dns-canary
     type: dns
+    interval_seconds: 60
     target: canary.supabase.co
     query_type: A
     cohorts: [high-freq, mid-freq, low-freq]
   - name: tls-canary
+    interval_seconds: 60
     type: tls
     target: canary.supabase.co
     cohorts: [high-freq, mid-freq]
   - name: ping-edge
     type: ping
+    interval_seconds: 60
     target: 162.159.36.1
     cohorts: [low-freq]
 
