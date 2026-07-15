@@ -75,33 +75,42 @@ func knownScoringCfg() config.ScoringConfig {
 	}
 }
 
-// buildSingleCohort runs selection with all 10 known probes in one round.
-func buildSingleCohort(t *testing.T, probes []snapshot.Probe) []selection.SelectedCohort {
+// buildSingleCohort runs selection with all probes in one cohort using the new API.
+func buildSingleCohort(t *testing.T, rawProbes []snapshot.Probe) []selection.SelectedCohort {
 	t.Helper()
-	cfg := config.Config{
-		Cohorts:      []config.Cohort{minimalCohort("r1", len(probes), 5)},
-		Measurements: []config.Measurement{{Name: "m", Type: "dns", Target: "x.com", Cohorts: []string{"r1"}}},
-		GeoDiversity: config.GeoConfig{H3Resolution: 3},
-		Scoring:      knownScoringCfg(),
-	}
-	snap := snapshot.Snapshot{Probes: probes}
 
-	cohorts, err := selection.Select(context.Background(), snap, cfg)
+	probes := selection.NewProbes(len(rawProbes))
+	for _, p := range rawProbes {
+		probes.Append(p)
+	}
+	probes.Close()
+
+	cohort := config.MeasurementCohort{
+		Name:             "r1",
+		ProbeCount:       len(rawProbes),
+		MaxProbesPerCell: 5,
+		IntervalSeconds:  60,
+	}
+	cohort.Cfg.ScoringConfig = knownScoringCfg()
+
+	cohorts, err := selection.Select(context.Background(), probes, []config.MeasurementCohort{cohort}, selection.NewDefaultOrderer(3), 3)
 	require.NoError(t, err)
+	for i := range cohorts {
+		cohorts[i].Measurement = "test-msm"
+	}
 	return cohorts
 }
 
 func TestReport_Counts(t *testing.T) {
 	probes := knownProbes()
 	cohorts := buildSingleCohort(t, probes)
-	scoring := knownScoringCfg()
 
-	report := selection.Report(cohorts, scoring)
+	report := selection.Report(cohorts)
 
 	// Total and per-round counts.
 	assert.Equal(t, 10, report.TotalProbes)
 	require.Len(t, report.ProbesByCohort, 1)
-	assert.Equal(t, "r1", report.ProbesByCohort[0].Cohort)
+	assert.Equal(t, "test-msm/r1", report.ProbesByCohort[0].Cohort)
 	assert.Equal(t, 10, report.ProbesByCohort[0].ProbeCount)
 
 	// Country histogram.
@@ -128,11 +137,9 @@ func TestReport_Counts(t *testing.T) {
 
 func TestReport_H3Resolution(t *testing.T) {
 	// Probes spread globally so that higher resolutions always subdivide into more cells.
-	probes := spreadProbes(30)
-	cohorts := buildSingleCohort(t, probes)
-	scoring := config.ScoringConfig{}
+	probes := buildSingleCohort(t, spreadProbes(30))
 
-	report := selection.Report(cohorts, scoring)
+	report := selection.Report(probes)
 
 	r2 := report.UniqueH3Cells[2]
 	r3 := report.UniqueH3Cells[3]
@@ -145,21 +152,22 @@ func TestReport_H3Resolution(t *testing.T) {
 
 func TestReport_MultipleCohorts(t *testing.T) {
 	// Two cohorts of 5 probes each, no overlap.
-	probes := spreadProbes(20)
-	cfg := config.Config{
-		Cohorts: []config.Cohort{
-			minimalCohort("r1", 5, 5),
-			minimalCohort("r2", 5, 5),
-		},
-		Measurements: []config.Measurement{{Name: "m", Type: "dns", Target: "x.com", Cohorts: []string{"r1"}}},
-		GeoDiversity: config.GeoConfig{H3Resolution: 3},
+	rawProbes := spreadProbes(20)
+	probes := selection.NewProbes(len(rawProbes))
+	for _, p := range rawProbes {
+		probes.Append(p)
 	}
-	snap := snapshot.Snapshot{Probes: probes}
+	probes.Close()
 
-	cohorts, err := selection.Select(context.Background(), snap, cfg)
+	cohorts := []config.MeasurementCohort{
+		{Name: "r1", ProbeCount: 5, MaxProbesPerCell: 5, IntervalSeconds: 60},
+		{Name: "r2", ProbeCount: 5, MaxProbesPerCell: 5, IntervalSeconds: 60},
+	}
+
+	selected, err := selection.Select(context.Background(), probes, cohorts, selection.NewDefaultOrderer(3), 3)
 	require.NoError(t, err)
 
-	report := selection.Report(cohorts, config.ScoringConfig{})
+	report := selection.Report(selected)
 
 	assert.Equal(t, 10, report.TotalProbes)
 	require.Len(t, report.ProbesByCohort, 2)
@@ -170,7 +178,7 @@ func TestReport_MultipleCohorts(t *testing.T) {
 func TestReport_JSON(t *testing.T) {
 	probes := knownProbes()
 	cohorts := buildSingleCohort(t, probes)
-	report := selection.Report(cohorts, knownScoringCfg())
+	report := selection.Report(cohorts)
 
 	data, err := report.JSON()
 	require.NoError(t, err)
@@ -187,7 +195,7 @@ func TestReport_JSON(t *testing.T) {
 func TestReport_Format(t *testing.T) {
 	probes := knownProbes()
 	cohorts := buildSingleCohort(t, probes)
-	report := selection.Report(cohorts, knownScoringCfg())
+	report := selection.Report(cohorts)
 
 	text := report.Format()
 
@@ -205,7 +213,7 @@ func TestReport_Format(t *testing.T) {
 func TestReport_ScoreStats(t *testing.T) {
 	probes := knownProbes()
 	cohorts := buildSingleCohort(t, probes)
-	report := selection.Report(cohorts, knownScoringCfg())
+	report := selection.Report(cohorts)
 
 	// US probes: 1+10+1+5+2+5 = 24, BR probes: 1+8+5+1 = 15, DE probes: 1+2 = 3
 	assert.Equal(t, 3, report.Scores.Min, "min score should be DE probes (score 3)")
@@ -215,7 +223,7 @@ func TestReport_ScoreStats(t *testing.T) {
 }
 
 func TestReport_ScoreStats_Empty(t *testing.T) {
-	report := selection.Report(nil, config.ScoringConfig{})
+	report := selection.Report(nil)
 	assert.Equal(t, selection.ScoreStats{}, report.Scores,
 		"empty cohorts should produce zero ScoreStats")
 }

@@ -1,55 +1,105 @@
 snapshot: probes/snapshot.json
 state: state.yaml
 
-cohorts:
-  - name: high-freq
-    probe_count: 30
-    max_probes_per_cell: 1
-  - name: mid-freq
-    probe_count: 60
-    max_probes_per_cell: 2
-  - name: low-freq
-    probe_count: 100
-    max_probes_per_cell: 3
+cohort_configs:
+  standard:
+    disable_continental_shuffle: false
+    asn:
+      7018: 10   # AT&T
+      7922: 8    # Comcast
+      28573: 8   # Claro Brazil
+    tags:
+      office: 5
+      datacentre: 4
+      fibre: 2
+      cable: 2
+      lte: 3
+      home: 1
+    countries:
+      BR: 5
+      US: 1
+      DE: 2
+      JP: 3
+    stability:
+      system-ipv4-stable-90d: 5
+      system-ipv4-stable-30d: 3
+    cities:
+      - name: Ashburn
+        lat: 39.04
+        lon: -77.49
+        radius_km: 40
+        density_coefficient: 2.0
+        score: 10
+      - name: São Paulo
+        lat: -23.55
+        lon: -46.63
+        radius_km: 60
+        density_coefficient: 3.0
+        score: 15
+
+  latam-focus:
+    disable_continental_shuffle: true
+    countries:
+      BR: 15
+      AR: 10
+      CL: 8
+    cities:
+      - name: São Paulo
+        lat: -23.55
+        lon: -46.63
+        radius_km: 60
+        density_coefficient: 3.0
+        score: 20
 
 measurements:
   - name: dns-canary
     type: dns
-    interval_seconds: 60
     target: canary.supabase.co
     query_type: A
-    cohorts: [high-freq, mid-freq, low-freq]
+    cohorts:
+      - name: high-freq
+        probe_count: 30
+        max_probes_per_cell: 1
+        interval_seconds: 60
+        cfg_preset: standard
+
+      - name: mid-freq
+        probe_count: 60
+        max_probes_per_cell: 2
+        interval_seconds: 300
+        cfg_preset: standard
+
+      - name: low-freq
+        probe_count: 100
+        max_probes_per_cell: 3
+        interval_seconds: 900
+        cfg_preset: standard
+
   - name: tls-canary
-    interval_seconds: 60
     type: tls
     target: canary.supabase.co
-    cohorts: [high-freq, mid-freq]
+    cohorts:
+      - name: high-freq
+        probe_count: 30
+        max_probes_per_cell: 1
+        interval_seconds: 60
+        cfg_preset: standard
+
+      - name: mid-freq
+        probe_count: 60
+        max_probes_per_cell: 2
+        interval_seconds: 300
+        cfg_preset: standard
+
   - name: ping-edge
     type: ping
-    interval_seconds: 60
     target: 162.159.36.1
-    cohorts: [low-freq]
-
-scoring:
-  asn:
-    7018: 10   # AT&T
-    7922: 8    # Comcast
-    28573: 8   # Claro Brazil
-  tags:
-    office: 5
-    datacentre: 4
-    fibre: 2
-    cable: 2
-    lte: 3
-    home: 1
-  countries:
-    BR: 5
-    US: 1
-    DE: 2
-    JP: 3
-  stability:
-    system-ipv4-stable-90d: 5
-    system-ipv4-stable-30d: 3
+    cohorts:
+      - name: only
+        probe_count: 100
+        max_probes_per_cell: 3
+        interval_seconds: 900
+        cfg_preset: latam-focus
 
 exclude_tags:
   - broken
@@ -59,17 +109,3 @@ exclude_tags:
 
 geo_diversity:
   h3_resolution: 3
-
-cities:
-  - name: Ashburn
-    lat: 39.04
-    lon: -77.49
-    radius_km: 40
-    density_coefficient: 2.0
-    score: 10
-  - name: São Paulo
-    lat: -23.55
-    lon: -46.63
-    radius_km: 60
-    density_coefficient: 3.0
-    score: 15

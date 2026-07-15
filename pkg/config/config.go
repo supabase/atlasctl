@@ -1,33 +1,62 @@
 package config
 
 import (
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"os"
+	"reflect"
 
 	"gopkg.in/yaml.v3"
 )
 
 // Config is the top-level configuration for atlasctl.
 type Config struct {
-	Snapshot     string        `yaml:"snapshot"`
-	State        string        `yaml:"state"`
-	TagPrefix    string        `yaml:"tag_prefix"`
-	Cohorts      []Cohort      `yaml:"cohorts"`
-	Measurements []Measurement `yaml:"measurements"`
-	Scoring      ScoringConfig `yaml:"scoring"`
-	ExcludeTags  []string      `yaml:"exclude_tags"`
-	GeoDiversity GeoConfig     `yaml:"geo_diversity"`
-	Cities       []CityConfig  `yaml:"cities"`
+	Snapshot      string               `yaml:"snapshot"`
+	State         string               `yaml:"state"`
+	TagPrefix     string               `yaml:"tag_prefix"`
+	CohortConfigs map[string]CohortCfg `yaml:"cohort_configs"`
+	Measurements  []Measurement        `yaml:"measurements"`
+	ExcludeTags   []string             `yaml:"exclude_tags"`
+	GeoDiversity  GeoConfig            `yaml:"geo_diversity"`
 }
 
-// Cohort defines a frequency tier for probe selection.
-type Cohort struct {
-	Name string `yaml:"name"`
-	// TODO: change!
-	// IntervalSeconds  int    `yaml:"interval_seconds"`
-	ProbeCount       int `yaml:"probe_count"`
-	MaxProbesPerCell int `yaml:"max_probes_per_cell"`
+// CohortCfg is the full ordering config for one cohort tier. It is the input
+// to both ProbeWeighter (for per-probe scoring) and ProbeOrderer (for global
+// reordering knobs). Named presets are defined in Config.CohortConfigs.
+//
+// Cities covers both scoring bonuses (Score field) and H3 density coefficients
+// (DensityCoefficient field). Both are per-cohort preferences.
+type CohortCfg struct {
+	ScoringConfig                   `yaml:",inline"`
+	Cities                    []CityConfig `yaml:"cities"`
+	DisableContinentalShuffle bool         `yaml:"disable_continental_shuffle"`
+}
+
+// CacheKey returns a stable hash of the cohort config suitable for use as a
+// cache key. It JSON-marshals the struct (encoding/json sorts map keys
+// deterministically) and hashes the result with FNV-1a.
+func (c CohortCfg) CacheKey() string {
+	b, _ := json.Marshal(c)
+	h := fnv.New64a()
+	h.Write(b)
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// MeasurementCohort is one tier within a measurement's cohort list.
+// ProbeCount and MaxProbesPerCell are selection policy: they are enforced by
+// the selection loop, not by the ProbeOrderer.
+type MeasurementCohort struct {
+	Name             string    `yaml:"name"`
+	ProbeCount       int       `yaml:"probe_count"`
+	MaxProbesPerCell int       `yaml:"max_probes_per_cell"`
+	IntervalSeconds  int       `yaml:"interval_seconds"`
+	IncludeProbeIDs  []uint32  `yaml:"include_probe_ids"`
+	ExcludeProbeIDs  []uint32  `yaml:"exclude_probe_ids"`
+	CfgPreset        string    `yaml:"cfg_preset"`
+	Cfg              CohortCfg `yaml:"cfg"`
 }
 
 // MeasurementType is one of the supported RIPE Atlas measurement types.
@@ -42,14 +71,12 @@ const (
 
 // Measurement defines a single measurement target and its cohort assignments.
 type Measurement struct {
-	Name            string `yaml:"name"`
-	IntervalSeconds int    `yaml:"interval_seconds"`
-	AF              int    `yaml:"af"` // address family: 4 or 6, default 4
-	Target          string `yaml:"target"`
-	// TODO: not used?
-	QueryType string          `yaml:"query_type"` // DNS only: A, AAAA, NS, MX, ...
-	Type      MeasurementType `yaml:"type"`
-	Cohorts   []string        `yaml:"cohorts"`
+	Name      string              `yaml:"name"`
+	Type      MeasurementType     `yaml:"type"`
+	Target    string              `yaml:"target"`
+	AF        int                 `yaml:"af"` // address family: 4 or 6, default 4
+	QueryType string              `yaml:"query_type"` // DNS only: A, AAAA, NS, MX, ...
+	Cohorts   []MeasurementCohort `yaml:"cohorts"`
 }
 
 // BandThresholds defines the minimum score for each band tier.
@@ -123,19 +150,23 @@ func (c *Config) applyDefaults() {
 	if c.GeoDiversity.H3Resolution == 0 {
 		c.GeoDiversity.H3Resolution = 3
 	}
-	t := &c.Scoring.BandThresholds
-	if t.A == 0 {
-		t.A = 15
-	}
-	if t.B == 0 {
-		t.B = 8
-	}
-	if t.C == 0 {
-		t.C = 3
-	}
 	for i := range c.Measurements {
 		if c.Measurements[i].AF == 0 {
 			c.Measurements[i].AF = 4
+		}
+		for j := range c.Measurements[i].Cohorts {
+			cohort := &c.Measurements[i].Cohorts[j]
+			if cohort.CfgPreset == "" {
+				continue
+			}
+			preset, ok := c.CohortConfigs[cohort.CfgPreset]
+			if !ok {
+				continue // validate will catch the unknown preset
+			}
+			if reflect.DeepEqual(cohort.Cfg, CohortCfg{}) {
+				cohort.Cfg = preset
+			}
+			cohort.CfgPreset = ""
 		}
 	}
 }
@@ -150,34 +181,9 @@ var validMeasurementTypes = map[MeasurementType]bool{
 func (c *Config) validate() error {
 	var errs []error
 
-	if len(c.Cohorts) == 0 {
-		errs = append(errs, errors.New("at least one cohort is required"))
-	}
-
-	// in validate()
-	for slug := range c.Scoring.Tags {
-		if _, conflict := c.Scoring.Stability[slug]; conflict {
-			errs = append(errs,
-				fmt.Errorf("scoring: tag slug %q appears in both tags and stability",
-					slug))
-		}
-	}
-
-	cohortNames := make(map[string]bool, len(c.Cohorts))
-	for i, r := range c.Cohorts {
-		if r.Name == "" {
-			errs = append(errs, fmt.Errorf("cohorts[%d]: name is required", i))
-		}
-		if cohortNames[r.Name] {
-			errs = append(errs, fmt.Errorf("duplicate cohort name %q", r.Name))
-		}
-		cohortNames[r.Name] = true
-		if r.ProbeCount <= 0 {
-			errs = append(errs, fmt.Errorf("cohort %q: probe_count must be positive", r.Name))
-		}
-		if r.MaxProbesPerCell <= 0 {
-			errs = append(errs, fmt.Errorf("cohort %q: max_probes_per_cell must be positive", r.Name))
-		}
+	// Validate named cohort config presets.
+	for name, cfg := range c.CohortConfigs {
+		errs = append(errs, validateCities(cfg.Cities, fmt.Sprintf("cohort_configs[%q]", name))...)
 	}
 
 	msmNames := make(map[string]bool, len(c.Measurements))
@@ -195,20 +201,38 @@ func (c *Config) validate() error {
 		if m.Target == "" {
 			errs = append(errs, fmt.Errorf("measurement %q: target is required", m.Name))
 		}
-		if len(m.Cohorts) == 0 {
-			errs = append(errs, fmt.Errorf("measurement %q: at least one cohort reference is required", m.Name))
-		}
 		if m.AF != 4 && m.AF != 6 {
 			errs = append(errs, fmt.Errorf("measurement %q: af must be 4 or 6, got %d", m.Name, m.AF))
 		}
-		if m.IntervalSeconds <= 0 {
-			errs = append(errs, fmt.Errorf("measurement %q: interval_seconds must be positive", m.Name))
+		if len(m.Cohorts) == 0 {
+			errs = append(errs, fmt.Errorf("measurement %q: at least one cohort is required", m.Name))
 		}
 
-		for _, ref := range m.Cohorts {
-			if !cohortNames[ref] {
-				errs = append(errs, fmt.Errorf("measurement %q: references unknown cohort %q", m.Name, ref))
+		cohortNames := make(map[string]bool, len(m.Cohorts))
+		for j, cohort := range m.Cohorts {
+			label := fmt.Sprintf("measurement %q cohorts[%d]", m.Name, j)
+			if cohort.Name == "" {
+				errs = append(errs, fmt.Errorf("%s: name is required", label))
 			}
+			if cohortNames[cohort.Name] {
+				errs = append(errs, fmt.Errorf("measurement %q: duplicate cohort name %q", m.Name, cohort.Name))
+			}
+			cohortNames[cohort.Name] = true
+			if cohort.ProbeCount <= 0 {
+				errs = append(errs, fmt.Errorf("measurement %q cohort %q: probe_count must be positive", m.Name, cohort.Name))
+			}
+			if cohort.MaxProbesPerCell <= 0 {
+				errs = append(errs, fmt.Errorf("measurement %q cohort %q: max_probes_per_cell must be positive", m.Name, cohort.Name))
+			}
+			if cohort.IntervalSeconds <= 0 {
+				errs = append(errs, fmt.Errorf("measurement %q cohort %q: interval_seconds must be positive", m.Name, cohort.Name))
+			}
+			if cohort.CfgPreset != "" {
+				if _, ok := c.CohortConfigs[cohort.CfgPreset]; !ok {
+					errs = append(errs, fmt.Errorf("measurement %q cohort %q: unknown cfg_preset %q", m.Name, cohort.Name, cohort.CfgPreset))
+				}
+			}
+			errs = append(errs, validateCities(cohort.Cfg.Cities, fmt.Sprintf("measurement %q cohort %q", m.Name, cohort.Name))...)
 		}
 	}
 
@@ -217,28 +241,21 @@ func (c *Config) validate() error {
 		errs = append(errs, fmt.Errorf("geo_diversity.h3_resolution must be between 1 and 15, got %d", res))
 	}
 
-	t := c.Scoring.BandThresholds
-	if t.C <= 0 {
-		errs = append(errs, fmt.Errorf("scoring.band_thresholds.c must be > 0, got %d", t.C))
-	}
-	if t.B <= t.C {
-		errs = append(errs, fmt.Errorf("scoring.band_thresholds.b (%d) must be greater than c (%d)", t.B, t.C))
-	}
-	if t.A <= t.B {
-		errs = append(errs, fmt.Errorf("scoring.band_thresholds.a (%d) must be greater than b (%d)", t.A, t.B))
-	}
+	return errors.Join(errs...)
+}
 
-	for i, city := range c.Cities {
+func validateCities(cities []CityConfig, context string) []error {
+	var errs []error
+	for i, city := range cities {
 		if city.Name == "" {
-			errs = append(errs, fmt.Errorf("cities[%d]: name is required", i))
+			errs = append(errs, fmt.Errorf("%s cities[%d]: name is required", context, i))
 		}
 		if city.RadiusKm <= 0 {
-			errs = append(errs, fmt.Errorf("city %q: radius_km must be positive", city.Name))
+			errs = append(errs, fmt.Errorf("%s city %q: radius_km must be positive", context, city.Name))
 		}
 		if city.DensityCoefficient <= 0 {
-			errs = append(errs, fmt.Errorf("city %q: density_coefficient must be > 0", city.Name))
+			errs = append(errs, fmt.Errorf("%s city %q: density_coefficient must be > 0", context, city.Name))
 		}
 	}
-
-	return errors.Join(errs...)
+	return errs
 }

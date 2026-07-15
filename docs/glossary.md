@@ -8,7 +8,7 @@ Terms used throughout atlasctl documentation, CLI output, config files, and stat
 
 **changeset** — the output of `plan`: a list of create, update (add/remove probes), stop, and noop operations needed to reconcile desired state with current state.
 
-**cohort** — named, exclusive probe group produced by the selection algorithm. Each probe belongs to exactly one cohort. Every (measurement, cohort) pair maps to one RIPE Atlas measurement ID. Cohorts are filled in definition order from a single scored and interleaved candidate list.
+**cohort** — per-measurement tier with its own probe count, interval, and ordering config. Cohorts within a measurement are filled in definition order; a probe selected for one cohort is excluded from all subsequent cohorts within that same measurement. Different measurements select from the full probe pool independently, so the same physical probe can appear in cohorts across separate measurements. Every (measurement, cohort) pair maps to one RIPE Atlas measurement ID.
 
 **continental zone** — one of six fixed geographic regions used during selection to interleave probes across continents before cohort slots are filled. Fixed order: NA, EU, APAC, LATAM, MENA, SSA.
 
@@ -32,7 +32,7 @@ Terms used throughout atlasctl documentation, CLI output, config files, and stat
 
 **score** — numeric rank assigned to a probe by the scoring algorithm. Base score is 1. Matching scoring criteria (ASN, country, tag, stability) add to it. All criteria are additive. Score determines which band a probe falls into.
 
-**selection** — the full process run by `atlasctl select`: score every probe in the snapshot, assign bands, apply H3 cell limits, interleave by continental zone within each band, then fill cohorts from the resulting ordered list.
+**selection** — the full process run by `atlasctl select`: build a filtered probe pool from the snapshot, then for each measurement independently score every probe using that measurement's cohort config, assign bands, apply H3 cell limits, interleave by continental zone within each band, and fill the measurement's cohorts from the resulting ordered list. Each measurement runs its own independent selection; the same physical probe can be selected for multiple measurements.
 
 **snapshot** — a cached JSON dump of all connected RIPE Atlas probes, written by `atlasctl refresh`. Selection reads the snapshot and makes no network calls. Refresh weekly or on demand to pick up changes in the probe pool.
 

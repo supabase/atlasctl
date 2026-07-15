@@ -31,9 +31,16 @@ func newSelectCmd(f *globalFlags, _ Deps) *cobra.Command {
 				return err
 			}
 
-			cohorts, err := selection.Select(ctx, snap, *cfg)
+			allSelected, err := selectAll(ctx, snap, *cfg)
 			if err != nil {
 				return err
+			}
+
+			// Flatten per-measurement results into a single ordered slice for
+			// reporting and GeoJSON, preserving measurement definition order.
+			var cohorts []selection.SelectedCohort
+			for _, msm := range cfg.Measurements {
+				cohorts = append(cohorts, allSelected[msm.Name]...)
 			}
 
 			data, err := selection.GeoJSON(cohorts)
@@ -57,7 +64,7 @@ func newSelectCmd(f *globalFlags, _ Deps) *cobra.Command {
 			case "geojson":
 				fmt.Fprintln(cmd.OutOrStdout(), string(data))
 			default:
-				report := selection.Report(cohorts, cfg.Scoring)
+				report := selection.Report(cohorts)
 				fmt.Fprintln(cmd.OutOrStdout(), report.Format())
 			}
 			return nil

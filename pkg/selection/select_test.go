@@ -16,12 +16,13 @@ import (
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
-// minimalCohort returns a Cohort with the given name and count, sensible defaults.
-func minimalCohort(name string, count, maxPerCell int) config.Cohort {
-	return config.Cohort{
+// minimalCohort returns a MeasurementCohort with sensible defaults.
+func minimalCohort(name string, count, maxPerCell int) config.MeasurementCohort {
+	return config.MeasurementCohort{
 		Name:             name,
 		ProbeCount:       count,
 		MaxProbesPerCell: maxPerCell,
+		IntervalSeconds:  60,
 	}
 }
 
@@ -44,28 +45,32 @@ func spreadProbes(n int) []snapshot.Probe {
 	return probes
 }
 
-// minCfg returns a minimal Config suitable for selection tests.
-func minCfg(cohorts []config.Cohort) config.Config {
-	return config.Config{
-		Cohorts:      cohorts,
-		Measurements: []config.Measurement{{Name: "m", Type: "dns", Target: "x.com", Cohorts: []string{cohorts[0].Name}}},
-		GeoDiversity: config.GeoConfig{H3Resolution: 3},
+// makeProbes builds a closed *selection.Probes from a probe slice.
+func makeProbes(ps []snapshot.Probe) *selection.Probes {
+	p := selection.NewProbes(len(ps))
+	for _, probe := range ps {
+		p.Append(probe)
 	}
+	p.Close()
+	return p
+}
+
+// defaultOrderer wraps NewDefaultOrderer at H3 resolution 3 for test convenience.
+func defaultOrderer() selection.ProbeOrderer {
+	return selection.NewDefaultOrderer(3)
 }
 
 // ── tests ─────────────────────────────────────────────────────────────────────
 
 func TestSelect_NoOverlap(t *testing.T) {
-	probes := spreadProbes(90)
-	cohorts := []config.Cohort{
+	probes := makeProbes(spreadProbes(90))
+	cohorts := []config.MeasurementCohort{
 		minimalCohort("r1", 20, 2),
 		minimalCohort("r2", 20, 2),
 		minimalCohort("r3", 20, 2),
 	}
-	cfg := minCfg(cohorts)
-	cfg.Cohorts = cohorts
 
-	result, err := selection.Select(context.Background(), snapshot.Snapshot{Probes: probes}, cfg)
+	result, err := selection.Select(context.Background(), probes, cohorts, defaultOrderer(), 3)
 	require.NoError(t, err)
 	require.Len(t, result, 3)
 
@@ -81,18 +86,17 @@ func TestSelect_NoOverlap(t *testing.T) {
 }
 
 func TestSelect_Determinism(t *testing.T) {
-	probes := spreadProbes(50)
-	cohorts := []config.Cohort{
+	probes := makeProbes(spreadProbes(50))
+	cohorts := []config.MeasurementCohort{
 		minimalCohort("r1", 15, 2),
 		minimalCohort("r2", 15, 2),
 	}
-	cfg := minCfg(cohorts)
-	cfg.Cohorts = cohorts
-	snap := snapshot.Snapshot{Probes: probes}
 
-	r1, err := selection.Select(context.Background(), snap, cfg)
+	// Use the same orderer for both runs to exercise the cache on the second run.
+	ord := defaultOrderer()
+	r1, err := selection.Select(context.Background(), probes, cohorts, ord, 3)
 	require.NoError(t, err)
-	r2, err := selection.Select(context.Background(), snap, cfg)
+	r2, err := selection.Select(context.Background(), probes, cohorts, ord, 3)
 	require.NoError(t, err)
 
 	require.Len(t, r2, len(r1))
@@ -131,16 +135,13 @@ func TestSelect_H3Limit(t *testing.T) {
 		}
 	}
 
-	cohorts := []config.Cohort{
+	probes := makeProbes(clusterProbes)
+	cohorts := []config.MeasurementCohort{
 		minimalCohort("r1", 5, 1), // max 1 per cell — cluster can only give 1
 		minimalCohort("r2", 5, 1),
 	}
-	cfg := minCfg(cohorts)
-	cfg.Cohorts = cohorts
 
-	result, err := selection.Select(context.Background(), snapshot.Snapshot{
-		Probes: clusterProbes,
-	}, cfg)
+	result, err := selection.Select(context.Background(), probes, cohorts, defaultOrderer(), 3)
 	require.NoError(t, err)
 	require.Len(t, result, 2)
 
@@ -164,9 +165,9 @@ func TestSelect_CityDensityReduction(t *testing.T) {
 		baseLat = 39.04
 		baseLon = -77.49
 	)
-	var probes []snapshot.Probe
+	var rawProbes []snapshot.Probe
 	for i := 0; i < 5; i++ {
-		probes = append(probes, snapshot.Probe{
+		rawProbes = append(rawProbes, snapshot.Probe{
 			ID:       uint32(i + 1),
 			StatusID: 1,
 			Lat:      baseLat + float64(i)*0.001,
@@ -182,11 +183,10 @@ func TestSelect_CityDensityReduction(t *testing.T) {
 		DensityCoefficient: 0.5,
 	}
 
-	cohorts := []config.Cohort{minimalCohort("r1", 5, 4)} // base cap=4, city reduces to 2
-	cfg := minCfg(cohorts)
-	cfg.Cities = []config.CityConfig{city}
+	cohort := minimalCohort("r1", 5, 4) // base cap=4, city reduces to ceil(4*0.5)=2
+	cohort.Cfg.Cities = []config.CityConfig{city}
 
-	result, err := selection.Select(context.Background(), snapshot.Snapshot{Probes: probes}, cfg)
+	result, err := selection.Select(context.Background(), makeProbes(rawProbes), []config.MeasurementCohort{cohort}, defaultOrderer(), 3)
 	require.NoError(t, err)
 	require.Len(t, result, 1)
 
@@ -194,16 +194,16 @@ func TestSelect_CityDensityReduction(t *testing.T) {
 		"density_coefficient=0.5 should reduce cap from 4 to ceil(4*0.5)=2")
 }
 
-func TestSelect_CityDensity(t *testing.T) {
-	// Put 5 probes tightly clustered near Ashburn (all in the same H3 cell).
+func TestSelect_CityDensityIncrease(t *testing.T) {
+	// 5 probes tightly clustered near Ashburn (all in the same H3 cell).
 	// City density_coefficient=3.0 should raise the per-cell cap from 1 to 3.
 	const (
 		baseLat = 39.04
 		baseLon = -77.49
 	)
-	var probes []snapshot.Probe
+	var rawProbes []snapshot.Probe
 	for i := 0; i < 5; i++ {
-		probes = append(probes, snapshot.Probe{
+		rawProbes = append(rawProbes, snapshot.Probe{
 			ID:          uint32(i + 1),
 			ASN4:        7018,
 			CountryCode: "US",
@@ -221,18 +221,52 @@ func TestSelect_CityDensity(t *testing.T) {
 		DensityCoefficient: 3.0,
 	}
 
-	cohorts := []config.Cohort{minimalCohort("r1", 5, 1)} // base cap=1, city raises to 3
-	cfg := minCfg(cohorts)
-	cfg.Cohorts = cohorts
-	cfg.Cities = []config.CityConfig{city}
+	cohort := minimalCohort("r1", 5, 1) // base cap=1, city raises to ceil(1*3.0)=3
+	cohort.Cfg.Cities = []config.CityConfig{city}
 
-	result, err := selection.Select(context.Background(), snapshot.Snapshot{Probes: probes}, cfg)
+	result, err := selection.Select(context.Background(), makeProbes(rawProbes), []config.MeasurementCohort{cohort}, defaultOrderer(), 3)
 	require.NoError(t, err)
 	require.Len(t, result, 1)
 
-	// Effective cap = ceil(1 * 3.0) = 3, so cohort should yield 3 probes from the cell.
 	assert.Equal(t, 3, len(result[0].Probes),
 		"city density_coefficient=3 should allow 3 probes from the same cell")
+}
+
+func TestSelect_CityDensityIsPerCohort(t *testing.T) {
+	// Same probe pool, two cohorts with different city configs. Verify that
+	// each cohort's density coefficient is applied independently.
+	const (
+		baseLat = 39.04
+		baseLon = -77.49
+	)
+	var rawProbes []snapshot.Probe
+	for i := 0; i < 5; i++ {
+		rawProbes = append(rawProbes, snapshot.Probe{
+			ID:       uint32(i + 1),
+			StatusID: 1,
+			Lat:      baseLat + float64(i)*0.001,
+			Lon:      baseLon + float64(i)*0.001,
+		})
+	}
+	probes := makeProbes(rawProbes)
+
+	ashburn := config.CityConfig{Name: "Ashburn", Lat: baseLat, Lon: baseLon, RadiusKm: 50}
+
+	// Cohort 1: coefficient=3.0 → cap raised from 1 to 3.
+	c1 := minimalCohort("dense", 5, 1)
+	high := ashburn
+	high.DensityCoefficient = 3.0
+	c1.Cfg.Cities = []config.CityConfig{high}
+
+	// Cohort 2: no city config → default cap=1 applies.
+	c2 := minimalCohort("sparse", 5, 1)
+
+	result, err := selection.Select(context.Background(), probes, []config.MeasurementCohort{c1, c2}, defaultOrderer(), 3)
+	require.NoError(t, err)
+	require.Len(t, result, 2)
+
+	assert.Equal(t, 3, len(result[0].Probes), "dense cohort: city coefficient=3 gives 3 probes from cluster")
+	assert.Equal(t, 1, len(result[1].Probes), "sparse cohort: no city config, only 1 probe left in cluster")
 }
 
 func TestSelect_CityScore(t *testing.T) {
@@ -245,10 +279,10 @@ func TestSelect_CityScore(t *testing.T) {
 		ashburnLon = -77.49
 	)
 
-	var probes []snapshot.Probe
+	var rawProbes []snapshot.Probe
 	// 5 probes near Ashburn (spread across different H3 cells).
 	for i := 0; i < 5; i++ {
-		probes = append(probes, snapshot.Probe{
+		rawProbes = append(rawProbes, snapshot.Probe{
 			ID:       uint32(i + 1),
 			StatusID: 1,
 			Lat:      ashburnLat + float64(i)*0.5,
@@ -257,7 +291,7 @@ func TestSelect_CityScore(t *testing.T) {
 	}
 	// 5 probes far away (Tokyo area).
 	for i := 0; i < 5; i++ {
-		probes = append(probes, snapshot.Probe{
+		rawProbes = append(rawProbes, snapshot.Probe{
 			ID:       uint32(i + 100),
 			StatusID: 1,
 			Lat:      35.68 + float64(i)*0.5,
@@ -273,11 +307,10 @@ func TestSelect_CityScore(t *testing.T) {
 		Score:    20,
 	}
 
-	cohorts := []config.Cohort{minimalCohort("r1", 5, 1)}
-	cfg := minCfg(cohorts)
-	cfg.Cities = []config.CityConfig{city}
+	cohort := minimalCohort("r1", 5, 1)
+	cohort.Cfg.Cities = []config.CityConfig{city}
 
-	result, err := selection.Select(context.Background(), snapshot.Snapshot{Probes: probes}, cfg)
+	result, err := selection.Select(context.Background(), makeProbes(rawProbes), []config.MeasurementCohort{cohort}, defaultOrderer(), 3)
 	require.NoError(t, err)
 	require.Len(t, result, 1)
 	require.Len(t, result[0].Probes, 5)
@@ -289,19 +322,25 @@ func TestSelect_CityScore(t *testing.T) {
 }
 
 func TestSelect_HardExclusion(t *testing.T) {
-	probes := []snapshot.Probe{
+	// Hard exclusion is the caller's responsibility: filter before building Probes.
+	rawProbes := []snapshot.Probe{
 		{ID: 1, ASN4: 7018, CountryCode: "US", Tags: []string{"office"}, Lat: 10, Lon: 10, StatusID: 1},
 		{ID: 2, ASN4: 7018, CountryCode: "US", Tags: []string{"broken"}, Lat: 11, Lon: 11, StatusID: 1},
 		{ID: 3, ASN4: 7018, CountryCode: "US", Tags: []string{"system-flakey-power"}, Lat: 12, Lon: 12, StatusID: 1},
 		{ID: 4, ASN4: 7018, CountryCode: "US", Tags: []string{"home"}, Lat: 13, Lon: 13, StatusID: 1},
 	}
+	excludeTags := []string{"broken", "system-flakey-power"}
 
-	cohorts := []config.Cohort{minimalCohort("r1", 10, 5)}
-	cfg := minCfg(cohorts)
-	cfg.Cohorts = cohorts
-	cfg.ExcludeTags = []string{"broken", "system-flakey-power"}
+	filtered := selection.NewProbes(len(rawProbes))
+	for _, p := range rawProbes {
+		if !selection.HardExcluded(p, excludeTags) {
+			filtered.Append(p)
+		}
+	}
+	filtered.Close()
 
-	result, err := selection.Select(context.Background(), snapshot.Snapshot{Probes: probes}, cfg)
+	cohorts := []config.MeasurementCohort{minimalCohort("r1", 10, 5)}
+	result, err := selection.Select(context.Background(), filtered, cohorts, defaultOrderer(), 3)
 	require.NoError(t, err)
 	require.Len(t, result, 1)
 
@@ -312,17 +351,90 @@ func TestSelect_HardExclusion(t *testing.T) {
 	assert.Len(t, result[0].Probes, 2, "only the 2 non-excluded probes should be selected")
 }
 
+func TestSelect_ExcludeProbeIDs(t *testing.T) {
+	rawProbes := spreadProbes(10)
+	probes := makeProbes(rawProbes)
+
+	cohort := minimalCohort("r1", 10, 5)
+	cohort.ExcludeProbeIDs = []uint32{1, 2, 3}
+
+	result, err := selection.Select(context.Background(), probes, []config.MeasurementCohort{cohort}, defaultOrderer(), 3)
+	require.NoError(t, err)
+	require.Len(t, result, 1)
+
+	for _, p := range result[0].Probes {
+		assert.NotEqual(t, uint32(1), p.ID)
+		assert.NotEqual(t, uint32(2), p.ID)
+		assert.NotEqual(t, uint32(3), p.ID)
+	}
+	assert.Len(t, result[0].Probes, 7, "10 probes minus 3 excluded = 7")
+}
+
+func TestSelect_IncludeProbeIDs(t *testing.T) {
+	rawProbes := spreadProbes(10)
+	probes := makeProbes(rawProbes)
+
+	cohort := minimalCohort("r1", 5, 1)
+	cohort.IncludeProbeIDs = []uint32{5, 6} // guaranteed to appear in results
+
+	result, err := selection.Select(context.Background(), probes, []config.MeasurementCohort{cohort}, defaultOrderer(), 3)
+	require.NoError(t, err)
+	require.Len(t, result, 1)
+	require.Len(t, result[0].Probes, 5)
+
+	includedIDs := make(map[uint32]bool)
+	for _, p := range result[0].Probes {
+		includedIDs[p.ID] = true
+	}
+	assert.True(t, includedIDs[5], "probe 5 must be included")
+	assert.True(t, includedIDs[6], "probe 6 must be included")
+}
+
+func TestSelect_IncludeBypassesH3Cap(t *testing.T) {
+	// All probes in the same H3 cell, cap=1. Two probes are forced via
+	// IncludeProbeIDs. They should both appear despite the cap=1 limit.
+	const (
+		baseLat = 39.04
+		baseLon = -77.49
+	)
+	clusterProbes := make([]snapshot.Probe, 5)
+	for i := range clusterProbes {
+		clusterProbes[i] = snapshot.Probe{
+			ID:          uint32(i + 1),
+			ASN4:        7018,
+			CountryCode: "US",
+			StatusID:    1,
+			Lat:         baseLat + float64(i)*0.001,
+			Lon:         baseLon + float64(i)*0.001,
+		}
+	}
+
+	cohort := minimalCohort("r1", 5, 1) // cap=1 per cell
+	cohort.IncludeProbeIDs = []uint32{1, 2}
+
+	result, err := selection.Select(context.Background(), makeProbes(clusterProbes), []config.MeasurementCohort{cohort}, defaultOrderer(), 3)
+	require.NoError(t, err)
+	require.Len(t, result, 1)
+
+	ids := make(map[uint32]bool)
+	for _, p := range result[0].Probes {
+		ids[p.ID] = true
+	}
+	assert.True(t, ids[1], "probe 1 must be included (bypasses H3 cap)")
+	assert.True(t, ids[2], "probe 2 must be included (bypasses H3 cap)")
+	// Only 1 additional probe can be selected due to the cap; total = 3.
+	assert.Len(t, result[0].Probes, 3)
+}
+
 func TestSelect_SmallSnapshot(t *testing.T) {
 	// Request more probes than exist — should return all available, no error.
-	probes := spreadProbes(5)
-	cohorts := []config.Cohort{
+	probes := makeProbes(spreadProbes(5))
+	cohorts := []config.MeasurementCohort{
 		minimalCohort("r1", 10, 5), // wants 10, only 5 exist
 		minimalCohort("r2", 10, 5), // r1 consumed all 5; r2 gets 0
 	}
-	cfg := minCfg(cohorts)
-	cfg.Cohorts = cohorts
 
-	result, err := selection.Select(context.Background(), snapshot.Snapshot{Probes: probes}, cfg)
+	result, err := selection.Select(context.Background(), probes, cohorts, defaultOrderer(), 3)
 	require.NoError(t, err)
 	require.Len(t, result, 2)
 
@@ -331,31 +443,28 @@ func TestSelect_SmallSnapshot(t *testing.T) {
 }
 
 func TestSelect_ContextCancel(t *testing.T) {
-	probes := spreadProbes(30)
-	cohorts := []config.Cohort{
+	probes := makeProbes(spreadProbes(30))
+	cohorts := []config.MeasurementCohort{
 		minimalCohort("r1", 5, 5),
 		minimalCohort("r2", 5, 5),
 	}
-	cfg := minCfg(cohorts)
-	cfg.Cohorts = cohorts
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // already cancelled
 
-	_, err := selection.Select(ctx, snapshot.Snapshot{Probes: probes}, cfg)
+	_, err := selection.Select(ctx, probes, cohorts, defaultOrderer(), 3)
 	assert.ErrorIs(t, err, context.Canceled)
 }
 
 func TestSelect_GeoJSON(t *testing.T) {
-	probes := []snapshot.Probe{
+	rawProbes := []snapshot.Probe{
 		{ID: 1, ASN4: 7018, CountryCode: "US", Tags: []string{"office"}, Lat: 39.04, Lon: -77.49, StatusID: 1},
 		{ID: 2, ASN4: 7922, CountryCode: "US", Tags: []string{"home"}, Lat: 40.71, Lon: -74.00, StatusID: 1},
 	}
-	cohorts := []config.Cohort{minimalCohort("r1", 10, 5)}
-	cfg := minCfg(cohorts)
-	cfg.Cohorts = cohorts
+	probes := makeProbes(rawProbes)
+	cohorts := []config.MeasurementCohort{minimalCohort("r1", 10, 5)}
 
-	result, err := selection.Select(context.Background(), snapshot.Snapshot{Probes: probes}, cfg)
+	result, err := selection.Select(context.Background(), probes, cohorts, defaultOrderer(), 3)
 	require.NoError(t, err)
 	require.Len(t, result, 1)
 
@@ -369,7 +478,6 @@ func TestSelect_GeoJSON(t *testing.T) {
 	assert.Len(t, features, 2)
 
 	// Verify GeoJSON coordinate order: [longitude, latitude].
-	// Find probe ID 1 in the features (sort order is by hash, not input order).
 	var probe1Feature map[string]any
 	for _, raw := range features {
 		f := raw.(map[string]any)
@@ -384,11 +492,9 @@ func TestSelect_GeoJSON(t *testing.T) {
 	geom := probe1Feature["geometry"].(map[string]any)
 	assert.Equal(t, "Point", geom["type"])
 	coords := geom["coordinates"].([]any)
-	// Probe 1: Lat=39.04 Lon=-77.49 → GeoJSON coords=[-77.49, 39.04]
 	assert.InDelta(t, -77.49, coords[0].(float64), 0.001)
 	assert.InDelta(t, 39.04, coords[1].(float64), 0.001)
 
-	// Verify cohort name is embedded in properties.
 	props := probe1Feature["properties"].(map[string]any)
 	assert.Equal(t, "r1", props["cohort"])
 }
@@ -402,11 +508,11 @@ func TestSelect_ContinentalInterleaving(t *testing.T) {
 	// cohort (NA has 2× more candidates). With interleaving the algorithm alternates
 	// NA and EU within Band B, yielding exactly 3 NA + 3 EU.
 
-	var probes []snapshot.Probe
+	var rawProbes []snapshot.Probe
 
 	// 8 NA probes, each ~5° apart across North America.
 	for i := range 8 {
-		probes = append(probes, snapshot.Probe{
+		rawProbes = append(rawProbes, snapshot.Probe{
 			ID:          uint32(i + 1),
 			ASN4:        7018,
 			CountryCode: "US",
@@ -417,7 +523,7 @@ func TestSelect_ContinentalInterleaving(t *testing.T) {
 	}
 	// 4 EU probes, each ~5° apart across Europe.
 	for i := range 4 {
-		probes = append(probes, snapshot.Probe{
+		rawProbes = append(rawProbes, snapshot.Probe{
 			ID:          uint32(100 + i),
 			ASN4:        7018,
 			CountryCode: "DE",
@@ -428,13 +534,12 @@ func TestSelect_ContinentalInterleaving(t *testing.T) {
 	}
 
 	// ASN 7018 weight 10 → score = 11 (base 1 + ASN 10) → Band B (threshold 8-14).
-	cohorts := []config.Cohort{minimalCohort("r1", 6, 1)}
-	cfg := minCfg(cohorts)
-	cfg.Scoring = config.ScoringConfig{
+	cohort := minimalCohort("r1", 6, 1)
+	cohort.Cfg.ScoringConfig = config.ScoringConfig{
 		ASN: map[uint32]int{7018: 10},
 	}
 
-	result, err := selection.Select(context.Background(), snapshot.Snapshot{Probes: probes}, cfg)
+	result, err := selection.Select(context.Background(), makeProbes(rawProbes), []config.MeasurementCohort{cohort}, defaultOrderer(), 3)
 	require.NoError(t, err)
 	require.Len(t, result, 1)
 	require.Len(t, result[0].Probes, 6, "cohort should fill to count=6")
@@ -453,31 +558,116 @@ func TestSelect_ContinentalInterleaving(t *testing.T) {
 	assert.Equal(t, 3, euCount, "interleaving should pick 3 of 4 EU probes")
 }
 
+func TestSelect_DisableContinentalShuffle(t *testing.T) {
+	// 4 NA and 4 EU probes, all Band-B. With interleaving, a 4-slot cohort yields
+	// 2 NA + 2 EU. With shuffle disabled, it follows hash order which clusters by
+	// whichever zone sorts first — not 2+2.
+	var rawProbes []snapshot.Probe
+	for i := range 4 {
+		rawProbes = append(rawProbes, snapshot.Probe{
+			ID: uint32(i + 1), ASN4: 7018, CountryCode: "US", StatusID: 1,
+			Lat: 35 + float64(i)*5, Lon: -100 + float64(i)*5,
+		})
+	}
+	for i := range 4 {
+		rawProbes = append(rawProbes, snapshot.Probe{
+			ID: uint32(100 + i), ASN4: 7018, CountryCode: "DE", StatusID: 1,
+			Lat: 48 + float64(i)*5, Lon: 8 + float64(i)*5,
+		})
+	}
+	probes := makeProbes(rawProbes)
+
+	scoring := config.ScoringConfig{ASN: map[uint32]int{7018: 10}}
+
+	shuffled := minimalCohort("shuffled", 4, 1)
+	shuffled.Cfg.ScoringConfig = scoring
+
+	noShuffle := minimalCohort("no-shuffle", 4, 1)
+	noShuffle.Cfg.ScoringConfig = scoring
+	noShuffle.Cfg.DisableContinentalShuffle = true
+
+	rShuffled, err := selection.Select(context.Background(), probes, []config.MeasurementCohort{shuffled}, defaultOrderer(), 3)
+	require.NoError(t, err)
+
+	rNoShuffle, err := selection.Select(context.Background(), probes, []config.MeasurementCohort{noShuffle}, defaultOrderer(), 3)
+	require.NoError(t, err)
+
+	naShuffled, euShuffled := 0, 0
+	for _, p := range rShuffled[0].Probes {
+		if p.CountryCode == "US" {
+			naShuffled++
+		} else {
+			euShuffled++
+		}
+	}
+	// With interleaving: should be 2 NA + 2 EU.
+	assert.Equal(t, 2, naShuffled)
+	assert.Equal(t, 2, euShuffled)
+
+	naNoShuffle, euNoShuffle := 0, 0
+	for _, p := range rNoShuffle[0].Probes {
+		if p.CountryCode == "US" {
+			naNoShuffle++
+		} else {
+			euNoShuffle++
+		}
+	}
+	// Without interleaving: hash order → likely all one zone dominates.
+	assert.NotEqual(t, 2, naNoShuffle, "without shuffle, distribution should not be balanced 2+2")
+}
+
+func TestSelect_OrdererCacheHit(t *testing.T) {
+	// The same orderer is reused across two Select calls with the same probe set
+	// and cohort cfg. Both calls must return identical probe orderings, confirming
+	// the cache key is stable and results are consistent.
+	rawProbes := spreadProbes(20)
+	probes := makeProbes(rawProbes)
+	cohorts := []config.MeasurementCohort{minimalCohort("r1", 10, 2)}
+
+	ord := defaultOrderer()
+
+	r1, err := selection.Select(context.Background(), probes, cohorts, ord, 3)
+	require.NoError(t, err)
+
+	r2, err := selection.Select(context.Background(), probes, cohorts, ord, 3)
+	require.NoError(t, err)
+
+	require.Equal(t, len(r1[0].Probes), len(r2[0].Probes))
+	for i, p := range r1[0].Probes {
+		assert.Equal(t, p.ID, r2[0].Probes[i].ID, "probe[%d] ID should match on repeated call", i)
+	}
+}
+
 // ── benchmark ─────────────────────────────────────────────────────────────────
 
 // BenchmarkSelect verifies the plan's exit criterion: 50k probes, 3 cohorts < 500 ms.
+// A fresh orderer is created each iteration to include scoring cost.
 func BenchmarkSelect(b *testing.B) {
-	probes := spreadProbes(50_000)
-	cohorts := []config.Cohort{
+	rawProbes := spreadProbes(50_000)
+	probes := selection.NewProbes(len(rawProbes))
+	for _, p := range rawProbes {
+		probes.Append(p)
+	}
+	probes.Close()
+
+	cohorts := []config.MeasurementCohort{
 		minimalCohort("high-freq", 30, 1),
 		minimalCohort("mid-freq", 60, 2),
 		minimalCohort("low-freq", 100, 3),
 	}
-	cfg := config.Config{
-		Cohorts:      cohorts,
-		Measurements: []config.Measurement{{Name: "m", Type: "dns", Target: "x.com", Cohorts: []string{"high-freq"}}},
-		GeoDiversity: config.GeoConfig{H3Resolution: 3},
-		Scoring:      referenceScoringConfig(),
-		Cities: []config.CityConfig{
-			{Name: "Ashburn", Lat: 39.04, Lon: -77.49, RadiusKm: 40, DensityCoefficient: 2.0},
-		},
+	// Inject a city so scoring exercises the city bonus path.
+	city := config.CityConfig{Name: "Ashburn", Lat: 39.04, Lon: -77.49, RadiusKm: 40, DensityCoefficient: 2.0}
+	for i := range cohorts {
+		cohorts[i].Cfg.Cities = []config.CityConfig{city}
+		cohorts[i].Cfg.ScoringConfig = referenceScoringConfig()
 	}
-	snap := snapshot.Snapshot{Probes: probes}
 	ctx := context.Background()
 
 	b.ResetTimer()
 	for range b.N {
-		_, err := selection.Select(ctx, snap, cfg)
+		// New orderer each iteration to include scoring cost in the measurement.
+		ord := selection.NewDefaultOrderer(3)
+		_, err := selection.Select(ctx, probes, cohorts, ord, 3)
 		if err != nil {
 			b.Fatal(err)
 		}

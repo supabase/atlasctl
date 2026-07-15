@@ -5,6 +5,7 @@ package selection
 import (
 	"encoding/binary"
 	"hash/fnv"
+	"math"
 
 	"github.com/supabase/atlasctl/pkg/config"
 	"github.com/supabase/atlasctl/pkg/snapshot"
@@ -35,6 +36,33 @@ func (b Band) String() string {
 	}
 }
 
+// ProbeWeighter returns the numeric priority of a single probe given the
+// cohort config. It is a pure function: stateless, no knowledge of other
+// probes, no knowledge of how many to select or which are excluded.
+// Higher weight means higher priority.
+type ProbeWeighter func(probe snapshot.Probe, cfg config.CohortCfg) int
+
+// NewDefaultWeighter returns the standard additive weighter. It combines
+// ScoringConfig weights (ASN, country, tag, stability) with geographic city
+// score bonuses from cfg.Cities.
+func NewDefaultWeighter() ProbeWeighter {
+	return func(p snapshot.Probe, cfg config.CohortCfg) int {
+		return Score(p, cfg.ScoringConfig) + cityScoreBonus(p, cfg.Cities)
+	}
+}
+
+// CombineWeighters returns a ProbeWeighter that sums the results of all
+// provided weighters. Useful for composing independent weighting strategies.
+func CombineWeighters(ws ...ProbeWeighter) ProbeWeighter {
+	return func(p snapshot.Probe, cfg config.CohortCfg) int {
+		total := 0
+		for _, w := range ws {
+			total += w(p, cfg)
+		}
+		return total
+	}
+}
+
 // Score computes the additive score for probe p given the scoring config.
 //
 // The formula is:
@@ -46,7 +74,6 @@ func (b Band) String() string {
 // from at most one of the two maps
 //
 // config validation rejects overlapping slugs.
-
 func Score(p snapshot.Probe, cfg config.ScoringConfig) int {
 	score := 1 // every connected probe starts from 1
 
@@ -115,4 +142,48 @@ func HardExcluded(p snapshot.Probe, excludeTags []string) bool {
 		}
 	}
 	return false
+}
+
+// cityScoreBonus returns the sum of score weights from all cities whose radius
+// covers probe p. Returns 0 if no city applies or all matching cities have Score=0.
+func cityScoreBonus(p snapshot.Probe, cities []config.CityConfig) int {
+	bonus := 0
+	for _, city := range cities {
+		if city.Score != 0 && haversineKm(p.Lat, p.Lon, city.Lat, city.Lon) <= city.RadiusKm {
+			bonus += city.Score
+		}
+	}
+	return bonus
+}
+
+// maxCityCoef returns the density coefficient to apply to probe p. If the probe
+// falls within multiple city radii, the highest coefficient wins (boost takes
+// priority). Returns 1.0 if no city applies.
+func maxCityCoef(p snapshot.Probe, cities []config.CityConfig) float64 {
+	coef := 1.0
+	matched := false
+	for _, city := range cities {
+		if haversineKm(p.Lat, p.Lon, city.Lat, city.Lon) <= city.RadiusKm {
+			if !matched || city.DensityCoefficient > coef {
+				coef = city.DensityCoefficient
+			}
+			matched = true
+		}
+	}
+	return coef
+}
+
+// haversineKm returns the great-circle distance in kilometres between two
+// (lat, lon) coordinate pairs using the haversine formula.
+func haversineKm(lat1, lon1, lat2, lon2 float64) float64 {
+	const earthRadiusKm = 6371.0
+
+	dLat := (lat2 - lat1) * math.Pi / 180
+	dLon := (lon2 - lon1) * math.Pi / 180
+
+	a := math.Sin(dLat/2)*math.Sin(dLat/2) +
+		math.Cos(lat1*math.Pi/180)*math.Cos(lat2*math.Pi/180)*
+			math.Sin(dLon/2)*math.Sin(dLon/2)
+
+	return earthRadiusKm * 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
 }

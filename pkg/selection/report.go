@@ -7,8 +7,6 @@ import (
 	"strings"
 
 	h3 "github.com/ThingsIXFoundation/h3-light"
-
-	"github.com/supabase/atlasctl/pkg/config"
 )
 
 // CoverageReport summarises the geographic and network diversity of a set of
@@ -52,12 +50,9 @@ type CohortCount struct {
 var h3Resolutions = []int{2, 3, 4}
 
 // Report computes a CoverageReport from a set of selected cohorts.
-// scoring is used to assign score bands to each probe.
-//
-// sketch shows for Report(cohorts []SelectedCohort), because band distribution
-// Note: the function signature adds a scoring parameter beyond what the plan
-// cannot be derived from probe data alone — it requires the config weights.
-func Report(cohorts []SelectedCohort, scoring config.ScoringConfig) CoverageReport {
+// Each cohort's probes are scored using that cohort's own ScoringConfig so
+// band assignments reflect the config that actually drove selection.
+func Report(cohorts []SelectedCohort) CoverageReport {
 	cells := map[int]map[h3.Cell]struct{}{}
 	for _, res := range h3Resolutions {
 		cells[res] = make(map[h3.Cell]struct{})
@@ -71,7 +66,7 @@ func Report(cohorts []SelectedCohort, scoring config.ScoringConfig) CoverageRepo
 	total := 0
 
 	for _, r := range cohorts {
-		byCohort = append(byCohort, CohortCount{Cohort: r.Cohort.Name, ProbeCount: len(r.Probes)})
+		byCohort = append(byCohort, CohortCount{Cohort: r.Measurement + "/" + r.Cohort.Name, ProbeCount: len(r.Probes)})
 		total += len(r.Probes)
 
 		for _, p := range r.Probes {
@@ -80,8 +75,8 @@ func Report(cohorts []SelectedCohort, scoring config.ScoringConfig) CoverageRepo
 				asns[p.ASN4]++
 			}
 
-			score := Score(p, scoring)
-			bands[AssignBand(score, scoring.BandThresholds.Effective()).String()]++
+			score := Score(p, r.Cohort.Cfg.ScoringConfig)
+			bands[AssignBand(score, r.Cohort.Cfg.BandThresholds.Effective()).String()]++
 			allScores = append(allScores, score)
 
 			for _, res := range h3Resolutions {
