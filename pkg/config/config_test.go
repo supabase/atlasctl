@@ -52,10 +52,10 @@ func TestLoad(t *testing.T) {
 cohorts:
   - name: fast
     probe_count: 10
-    interval_seconds: 60
     max_probes_per_cell: 1
 measurements:
   - name: dns-test
+    interval_seconds: 60
     type: dns
     target: example.com
     cohorts: [fast]
@@ -76,13 +76,13 @@ measurements:
 		},
 		{
 			name:        "no cohorts",
-			yaml:        `measurements: [{name: m, type: dns, target: x.com, cohorts: [r]}]`,
+			yaml:        `measurements: [{name: m, interval_seconds: 60, type: dns, target: x.com, cohorts: [r]}]`,
 			wantErr:     true,
 			errContains: "at least one cohort",
 		},
 		{
 			name:    "no measurements",
-			yaml:    `cohorts: [{name: r, probe_count: 10, interval_seconds: 60, max_probes_per_cell: 1}]`,
+			yaml:    `cohorts: [{name: r, probe_count: 10, max_probes_per_cell: 1}]`,
 			wantErr: false,
 		},
 		{
@@ -91,15 +91,14 @@ measurements:
 cohorts:
   - name: r1
     probe_count: 10
-    interval_seconds: 60
     max_probes_per_cell: 1
   - name: r1
     probe_count: 20
-    interval_seconds: 120
     max_probes_per_cell: 2
 measurements:
   - name: m
     type: dns
+    interval_seconds: 60
     target: x.com
     cohorts: [r1]
 `,
@@ -112,15 +111,16 @@ measurements:
 cohorts:
   - name: r1
     probe_count: 10
-    interval_seconds: 60
     max_probes_per_cell: 1
 measurements:
   - name: m
     type: dns
     target: x.com
+    interval_seconds: 60
     cohorts: [r1]
   - name: m
     type: ping
+    interval_seconds: 30
     target: x.com
     cohorts: [r1]
 `,
@@ -133,11 +133,11 @@ measurements:
 cohorts:
   - name: r
     probe_count: 10
-    interval_seconds: 0
     max_probes_per_cell: 1
 measurements:
   - name: m
     type: dns
+    interval_seconds: 0
     target: x.com
     cohorts: [r]
 `,
@@ -150,10 +150,10 @@ measurements:
 cohorts:
   - name: r
     probe_count: 10
-    interval_seconds: -60
     max_probes_per_cell: 1
 measurements:
   - name: m
+    interval_seconds: -60
     type: dns
     target: x.com
     cohorts: [r]
@@ -167,11 +167,11 @@ measurements:
 cohorts:
   - name: r
     probe_count: 0
-    interval_seconds: 60
     max_probes_per_cell: 1
 measurements:
   - name: m
     type: dns
+    interval_seconds: 60
     target: x.com
     cohorts: [r]
 `,
@@ -184,10 +184,10 @@ measurements:
 cohorts:
   - name: r
     probe_count: 10
-    interval_seconds: 60
     max_probes_per_cell: 0
 measurements:
   - name: m
+    interval_seconds: 60
     type: dns
     target: x.com
     cohorts: [r]
@@ -201,10 +201,10 @@ measurements:
 cohorts:
   - name: r
     probe_count: 10
-    interval_seconds: 60
     max_probes_per_cell: 1
 measurements:
   - name: m
+    interval_seconds: 60
     type: http
     target: x.com
     cohorts: [r]
@@ -218,10 +218,10 @@ measurements:
 cohorts:
   - name: r
     probe_count: 10
-    interval_seconds: 60
     max_probes_per_cell: 1
 measurements:
   - name: m
+    interval_seconds: 60
     type: dns
     target: x.com
     cohorts: [r, nonexistent]
@@ -235,10 +235,10 @@ measurements:
 cohorts:
   - name: r
     probe_count: 10
-    interval_seconds: 60
     max_probes_per_cell: 1
 measurements:
   - name: m
+    interval_seconds: 60
     type: dns
     cohorts: [r]
 `,
@@ -251,10 +251,10 @@ measurements:
 cohorts:
   - name: r
     probe_count: 10
-    interval_seconds: 60
     max_probes_per_cell: 1
 measurements:
   - name: m
+    interval_seconds: 60
     type: dns
     target: x.com
 `,
@@ -267,11 +267,11 @@ measurements:
 cohorts:
   - name: r
     probe_count: 10
-    interval_seconds: 60
     max_probes_per_cell: 1
 measurements:
   - name: m
     type: dns
+    interval_seconds: 60
     target: x.com
     cohorts: [r]
 geo_diversity:
@@ -286,11 +286,11 @@ geo_diversity:
 cohorts:
   - name: r
     probe_count: 10
-    interval_seconds: 60
     max_probes_per_cell: 1
 measurements:
   - name: m
     type: dns
+    interval_seconds: 60
     target: x.com
     cohorts: [r]
 cities:
@@ -308,11 +308,11 @@ cities:
 cohorts:
   - name: r
     probe_count: 10
-    interval_seconds: 60
     max_probes_per_cell: 1
 measurements:
   - name: m
     type: dns
+    interval_seconds: 60
     target: x.com
     cohorts: [r]
 cities:
@@ -331,11 +331,11 @@ cities:
 cohorts:
   - name: r
     probe_count: 10
-    interval_seconds: 60
     max_probes_per_cell: 1
 measurements:
   - name: m
     type: dns
+    interval_seconds: 60
     target: x.com
     cohorts: [r]
 cities:
@@ -353,23 +353,26 @@ cities:
 cohorts:
   - name: r
     probe_count: 10
-    interval_seconds: 60
     max_probes_per_cell: 1
 measurements:
   - name: m-dns
     type: dns
+    interval_seconds: 60
     target: x.com
     cohorts: [r]
   - name: m-ping
     type: ping
     target: 1.2.3.4
+    interval_seconds: 10
     cohorts: [r]
   - name: m-tls
     type: tls
+    interval_seconds: 90
     target: x.com
     cohorts: [r]
   - name: m-trace
     type: traceroute
+    interval_seconds: 95
     target: 1.2.3.4
     cohorts: [r]
 `,
@@ -387,6 +390,8 @@ measurements:
 				require.Error(t, err)
 				if tt.errContains != "" {
 					assert.Contains(t, err.Error(), tt.errContains)
+					// TODO: REMOVE
+					t.Log(tt.yaml)
 				}
 				assert.Nil(t, cfg)
 				return

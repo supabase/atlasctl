@@ -23,10 +23,11 @@ type Config struct {
 
 // Cohort defines a frequency tier for probe selection.
 type Cohort struct {
-	Name             string `yaml:"name"`
-	ProbeCount       int    `yaml:"probe_count"`
-	IntervalSeconds  int    `yaml:"interval_seconds"`
-	MaxProbesPerCell int    `yaml:"max_probes_per_cell"`
+	Name string `yaml:"name"`
+	// TODO: change!
+	// IntervalSeconds  int    `yaml:"interval_seconds"`
+	ProbeCount       int `yaml:"probe_count"`
+	MaxProbesPerCell int `yaml:"max_probes_per_cell"`
 }
 
 // MeasurementType is one of the supported RIPE Atlas measurement types.
@@ -41,11 +42,13 @@ const (
 
 // Measurement defines a single measurement target and its cohort assignments.
 type Measurement struct {
-	Name      string          `yaml:"name"`
-	Type      MeasurementType `yaml:"type"`
-	Target    string          `yaml:"target"`
+	Name            string `yaml:"name"`
+	IntervalSeconds int    `yaml:"interval_seconds"`
+	AF              int    `yaml:"af"` // address family: 4 or 6, default 4
+	Target          string `yaml:"target"`
+	// TODO: not used?
 	QueryType string          `yaml:"query_type"` // DNS only: A, AAAA, NS, MX, ...
-	AF        int             `yaml:"af"`         // address family: 4 or 6, default 4
+	Type      MeasurementType `yaml:"type"`
 	Cohorts   []string        `yaml:"cohorts"`
 }
 
@@ -172,9 +175,6 @@ func (c *Config) validate() error {
 		if r.ProbeCount <= 0 {
 			errs = append(errs, fmt.Errorf("cohort %q: probe_count must be positive", r.Name))
 		}
-		if r.IntervalSeconds <= 0 {
-			errs = append(errs, fmt.Errorf("cohort %q: interval_seconds must be positive", r.Name))
-		}
 		if r.MaxProbesPerCell <= 0 {
 			errs = append(errs, fmt.Errorf("cohort %q: max_probes_per_cell must be positive", r.Name))
 		}
@@ -201,6 +201,10 @@ func (c *Config) validate() error {
 		if m.AF != 4 && m.AF != 6 {
 			errs = append(errs, fmt.Errorf("measurement %q: af must be 4 or 6, got %d", m.Name, m.AF))
 		}
+		if m.IntervalSeconds <= 0 {
+			errs = append(errs, fmt.Errorf("measurement %q: interval_seconds must be positive", m.Name))
+		}
+
 		for _, ref := range m.Cohorts {
 			if !cohortNames[ref] {
 				errs = append(errs, fmt.Errorf("measurement %q: references unknown cohort %q", m.Name, ref))
