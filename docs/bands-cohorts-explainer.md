@@ -2,11 +2,11 @@
 
 These three concepts interact during probe selection and are easy to conflate. This doc explains each one in isolation, then describes how they interact.
 
-## One config, one set of probe groups
+## Per-measurement probe selection
 
-A probe appears in exactly one cohort. Every measurement that references that cohort — DNS, TLS, ping, traceroute — runs on the identical set of probes. `dns-canary/high-freq` and `tls-canary/high-freq` share the same 30 probes by design, so their results are directly comparable.
+Each measurement runs its own probe selection against the full pool. `dns-canary` and `tls-canary` do not compete for probes. Both can select the same physical probe; they produce separate RIPE Atlas measurements regardless. This means you can give each measurement a different scoring focus, geographic weighting, or set of city bonuses without those choices affecting any other measurement.
 
-A single `atlasctl.yaml` owns one probe selection policy and one set of groups of probes or cohorts. If you need a fundamentally different grouping — different scoring priorities, different geographic focus, different probe compositions — create a new `atlasctl.yaml` in a separate directory with its own snapshot and state file. Each config is an independent unit of management.
+Within a single measurement, cohorts are exclusive: a probe selected for `high-freq` cannot appear in `low-freq` of the same measurement. That draw-down coupling is scoped to the measurement, not global.
 
 ## Bands: a scoring stability mechanism
 
@@ -27,7 +27,7 @@ Bands are a mechanism internal to the selection algorithm. They are not a user-f
 
 A cohort is a named probe group. Each cohort has a target probe count, an interval, and a position in the draw-down order. Each `(measurement, cohort)` pair becomes one RIPE Atlas measurement with its own ID.
 
-The core primitive cohorts provide is **separate RIPE Atlas measurement IDs from a single scored probe pool, with non-overlapping probe sets**. A probe selected for the first cohort is excluded from all subsequent cohorts. This means:
+The core primitive cohorts provide is **separate RIPE Atlas measurement IDs from a shared probe pool, with non-overlapping probe sets within the same measurement**. A probe selected for the first cohort of a measurement is excluded from all subsequent cohorts of that measurement. This means:
 
 - Cohort 1 gets the best available probes by score.
 - Cohort 2 gets the best available probes that cohort 1 did not take.
@@ -51,7 +51,7 @@ Having four or fewer cohorts is conventional, not required.
 
 ## Continental interleaving: the dominant coverage force
 
-After scoring and band assignment, `interleaveContinents` reorders the full candidate list. This step is applied once to the entire pool before any cohort selection begins. The reordering works within each band:
+After scoring and band assignment, `interleaveContinents` reorders the probe list for each cohort's ordering pass. The result is cached per (probe pool, ordering config) pair, so cohorts within a measurement that share the same ordering config reuse the cached list without re-scoring. The reordering works within each band:
 
 ```
 Band A pass 1:  NA-A₁  EU-A₁  APAC-A₁  LATAM-A₁  MENA-A₁  SSA-A₁
@@ -60,7 +60,7 @@ Band B pass 1:  NA-B₁  EU-B₁  APAC-B₁  ...
 ...
 ```
 
-The zone order is fixed: NA, EU, APAC, LATAM, MENA, SSA. Antarctica is not included; unmapped country codes fall to NA as a safe default.
+Six zones are active in fixed order. For the zone list and country mappings, see [selection-reference.md](selection-reference.md).
 
 Cohort selection then walks this reordered list from the front. The first N entries become the cohort's probe set. This means:
 
@@ -136,10 +136,10 @@ If your requirements are purely geographic — you want continental spread with 
 
 | Concept | Purpose | Configurable? |
 |---------|---------|---------------|
-| Score | Ranks probes by relevance | Yes — via `scoring:` in config |
+| Score | Ranks probes by relevance | Yes — via `cfg:` or `cfg_preset:` in each cohort |
 | Band | Stability bucket for sort ordering | Yes — via `band_thresholds:` |
 | Continental zone | Ensures geographic spread | No — fixed six-zone scheme |
-| Cohort | Named, exclusive probe group; each (measurement, cohort) pair produces one RIPE Atlas measurement ID | Yes — via `cohorts:` in config |
+| Cohort | Per-measurement tier with its own probe count, interval, and ordering config; each (measurement, cohort) pair produces one RIPE Atlas measurement ID; exclusive within a measurement, independent across measurements | Yes, inside each measurement via `cohorts:` |
 
 The operational knobs that matter most:
 

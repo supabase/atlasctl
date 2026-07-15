@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 
 	"github.com/spf13/cobra"
@@ -10,6 +11,34 @@ import (
 	"github.com/supabase/atlasctl/pkg/selection"
 	"github.com/supabase/atlasctl/pkg/snapshot"
 )
+
+// selectAll builds a filtered probe pool from snap and runs per-measurement
+// selection, returning results keyed by measurement name. The orderer is
+// shared across all measurements so that cohorts with identical CohortCfg
+// benefit from the in-memory ordering cache.
+func selectAll(ctx context.Context, snap snapshot.Snapshot, cfg config.Config) (map[string][]selection.SelectedCohort, error) {
+	probes := selection.NewProbes(len(snap.Probes))
+	for _, p := range snap.Probes {
+		if !selection.HardExcluded(p, cfg.ExcludeTags) {
+			probes.Append(p)
+		}
+	}
+	probes.Close()
+
+	orderer := selection.NewDefaultOrderer(cfg.GeoDiversity.H3Resolution)
+	allSelected := make(map[string][]selection.SelectedCohort, len(cfg.Measurements))
+	for _, msm := range cfg.Measurements {
+		selected, err := selection.Select(ctx, probes, msm.Cohorts, orderer, cfg.GeoDiversity.H3Resolution)
+		if err != nil {
+			return nil, err
+		}
+		for i := range selected {
+			selected[i].Measurement = msm.Name
+		}
+		allSelected[msm.Name] = selected
+	}
+	return allSelected, nil
+}
 
 func newPlanCmd(f *globalFlags, deps Deps) *cobra.Command {
 	return &cobra.Command{
@@ -39,11 +68,11 @@ func newPlanCmd(f *globalFlags, deps Deps) *cobra.Command {
 				state = plan.NewStateFile()
 			}
 
-			cohorts, err := selection.Select(ctx, snap, *cfg)
+			allSelected, err := selectAll(ctx, snap, *cfg)
 			if err != nil {
 				return err
 			}
-			desired := plan.DesiredState(*cfg, cohorts)
+			desired := plan.DesiredState(*cfg, allSelected)
 
 			apiKey, err := resolveAPIKey(f.APIKey)
 			if err != nil {

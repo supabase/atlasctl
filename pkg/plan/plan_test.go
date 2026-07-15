@@ -317,32 +317,50 @@ func TestDiff_MultipleEntries(t *testing.T) {
 
 func TestDesiredState(t *testing.T) {
 	cfg := config.Config{
-		Cohorts: []config.Cohort{
-			{Name: "high-freq", ProbeCount: 2, MaxProbesPerCell: 1},
-			{Name: "low-freq", ProbeCount: 3, MaxProbesPerCell: 2},
-		},
 		Measurements: []config.Measurement{
 			{
-				Name: "dns-canary", Type: config.TypeDNS, Target: "canary.supabase.co",
-				IntervalSeconds: 60,
-				Cohorts:         []string{"high-freq", "low-freq"},
+				Name:   "dns-canary",
+				Type:   config.TypeDNS,
+				Target: "canary.supabase.co",
+				AF:     4,
+				Cohorts: []config.MeasurementCohort{
+					{Name: "high-freq", ProbeCount: 2, MaxProbesPerCell: 1, IntervalSeconds: 60},
+					{Name: "low-freq", ProbeCount: 3, MaxProbesPerCell: 2, IntervalSeconds: 900},
+				},
 			},
-			{Name: "ping-edge", Type: config.TypePing, Target: "1.2.3.4", IntervalSeconds: 900, Cohorts: []string{"low-freq"}},
+			{
+				Name:   "ping-edge",
+				Type:   config.TypePing,
+				Target: "1.2.3.4",
+				AF:     4,
+				Cohorts: []config.MeasurementCohort{
+					{Name: "low-freq", ProbeCount: 3, MaxProbesPerCell: 2, IntervalSeconds: 900},
+				},
+			},
 		},
 	}
 
-	cohorts := []selection.SelectedCohort{
-		{
-			Cohort: config.Cohort{Name: "high-freq"},
-			Probes: []snapshot.Probe{{ID: 10}, {ID: 20}},
+	// Each measurement gets independent selection results.
+	allSelected := map[string][]selection.SelectedCohort{
+		"dns-canary": {
+			{
+				Cohort: config.MeasurementCohort{Name: "high-freq", IntervalSeconds: 60},
+				Probes: []snapshot.Probe{{ID: 10}, {ID: 20}},
+			},
+			{
+				Cohort: config.MeasurementCohort{Name: "low-freq", IntervalSeconds: 900},
+				Probes: []snapshot.Probe{{ID: 30}, {ID: 40}, {ID: 50}},
+			},
 		},
-		{
-			Cohort: config.Cohort{Name: "low-freq"},
-			Probes: []snapshot.Probe{{ID: 30}, {ID: 40}, {ID: 50}},
+		"ping-edge": {
+			{
+				Cohort: config.MeasurementCohort{Name: "low-freq", IntervalSeconds: 900},
+				Probes: []snapshot.Probe{{ID: 30}, {ID: 40}, {ID: 50}},
+			},
 		},
 	}
 
-	desired := plan.DesiredState(cfg, cohorts)
+	desired := plan.DesiredState(cfg, allSelected)
 
 	require.Len(t, desired, 3) // dns-canary/high-freq, dns-canary/low-freq, ping-edge/low-freq
 
@@ -353,12 +371,13 @@ func TestDesiredState(t *testing.T) {
 	assert.ElementsMatch(t, []uint32{10, 20}, d.ProbeIDs)
 
 	d = desired[plan.MsmKey{Name: "dns-canary", Cohort: "low-freq"}]
-	assert.Equal(t, 60, d.Interval)
+	assert.Equal(t, 900, d.Interval)
 	assert.ElementsMatch(t, []uint32{30, 40, 50}, d.ProbeIDs)
 
 	d = desired[plan.MsmKey{Name: "ping-edge", Cohort: "low-freq"}]
 	assert.Equal(t, "1.2.3.4", d.Target)
 	assert.Equal(t, plan.MsmTypePing, d.Type)
+	assert.Equal(t, 900, d.Interval)
 	assert.ElementsMatch(t, []uint32{30, 40, 50}, d.ProbeIDs)
 }
 

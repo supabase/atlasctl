@@ -10,7 +10,6 @@ import (
 
 	"github.com/supabase/atlasctl/pkg/config"
 	"github.com/supabase/atlasctl/pkg/plan"
-	"github.com/supabase/atlasctl/pkg/selection"
 	"github.com/supabase/atlasctl/pkg/snapshot"
 )
 
@@ -46,11 +45,11 @@ func newApplyCmd(f *globalFlags, deps Deps) *cobra.Command {
 				state = plan.NewStateFile()
 			}
 
-			cohorts, err := selection.Select(ctx, snap, *cfg)
+			allSelected, err := selectAll(ctx, snap, *cfg)
 			if err != nil {
 				return err
 			}
-			desired := plan.DesiredState(*cfg, cohorts)
+			desired := plan.DesiredState(*cfg, allSelected)
 
 			apiKey, err := resolveAPIKey(f.APIKey)
 			if err != nil {

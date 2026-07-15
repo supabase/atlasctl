@@ -2,6 +2,9 @@ package selection
 
 import (
 	"context"
+	"encoding/binary"
+	"encoding/hex"
+	"hash/fnv"
 	"math"
 	"sort"
 
@@ -11,10 +14,226 @@ import (
 	"github.com/supabase/atlasctl/pkg/snapshot"
 )
 
-// SelectedCohorts is the output of one cohort of probe selection.
+// SelectedCohort holds the output for one cohort tier after selection.
 type SelectedCohort struct {
-	Cohort config.Cohort
-	Probes []snapshot.Probe
+	Measurement string
+	Cohort      config.MeasurementCohort
+	Probes      []snapshot.Probe
+}
+
+// Probes is an immutable, hashed probe set. Call Append until the full set
+// is loaded, then call Close. After Close, CacheKey and Slice are valid;
+// further Appends panic.
+type Probes struct {
+	probes   []snapshot.Probe
+	cacheKey string
+	closed   bool
+}
+
+// NewProbes returns an empty Probes with the given initial capacity.
+func NewProbes(capacity int) *Probes {
+	return &Probes{probes: make([]snapshot.Probe, 0, capacity)}
+}
+
+// Append adds a probe to the set. Panics if called after Close.
+func (p *Probes) Append(probe snapshot.Probe) {
+	if p.closed {
+		panic("selection.Probes: Append called after Close")
+	}
+	p.probes = append(p.probes, probe)
+}
+
+// Close sorts the probe set by ID and computes the cache key. After Close,
+// Append panics and CacheKey/Slice are valid.
+func (p *Probes) Close() {
+	sort.Slice(p.probes, func(i, j int) bool {
+		return p.probes[i].ID < p.probes[j].ID
+	})
+	h := fnv.New64a()
+	var buf [4]byte
+	for _, probe := range p.probes {
+		binary.BigEndian.PutUint32(buf[:], probe.ID)
+		h.Write(buf[:])
+	}
+	p.cacheKey = hex.EncodeToString(h.Sum(nil))
+	p.closed = true
+}
+
+// CacheKey returns the stable hash of this probe set. Valid after Close.
+func (p *Probes) CacheKey() string {
+	return p.cacheKey
+}
+
+// Slice returns the probe slice in ID-sorted order. Valid after Close.
+// Callers must not modify the returned slice.
+func (p *Probes) Slice() []snapshot.Probe {
+	return p.probes
+}
+
+// ProbeOrderer produces a total ordering of probes for a given cohort config.
+// The probe at index 0 is considered first during selection. The orderer is a
+// pure function: it has no knowledge of count, exclusions, or H3 cell state.
+type ProbeOrderer func(probes *Probes, cfg config.CohortCfg) []snapshot.Probe
+
+// NewDefaultOrderer constructs the standard orderer. It uses NewDefaultWeighter
+// to score probes, sorts by (band DESC, hash ASC, ID ASC), then optionally
+// applies continental interleaving based on cfg.DisableContinentalShuffle.
+// Results are cached in memory per (probes.CacheKey(), cfg.CacheKey()).
+//
+// h3Resolution is closed over at construction time as global geographic config.
+func NewDefaultOrderer(h3Resolution int) ProbeOrderer {
+	_ = h3Resolution // reserved for future H3-based ordering knobs
+	type cacheKey struct{ probes, cfg string }
+	cache := make(map[cacheKey][]snapshot.Probe)
+	w := NewDefaultWeighter()
+
+	return func(probes *Probes, cfg config.CohortCfg) []snapshot.Probe {
+		k := cacheKey{probes.CacheKey(), cfg.CacheKey()}
+		if cached, ok := cache[k]; ok {
+			return cached
+		}
+
+		ps := probes.Slice()
+		candidates := make([]candidate, len(ps))
+		for i, p := range ps {
+			score := w(p, cfg)
+			band, hash := SortKey(p, score, cfg.BandThresholds.Effective())
+			candidates[i] = candidate{
+				probe: p,
+				band:  band,
+				hash:  hash,
+			}
+		}
+
+		sort.Slice(candidates, func(i, j int) bool {
+			a, b := candidates[i], candidates[j]
+			if a.band != b.band {
+				return a.band > b.band
+			}
+			if a.hash != b.hash {
+				return a.hash < b.hash
+			}
+			return a.probe.ID < b.probe.ID
+		})
+
+		if !cfg.DisableContinentalShuffle {
+			candidates = interleaveContinents(candidates)
+		}
+
+		result := make([]snapshot.Probe, len(candidates))
+		for i, c := range candidates {
+			result[i] = c.probe
+		}
+		cache[k] = result
+		return result
+	}
+}
+
+// Select runs cohort selection for one measurement's cohort list against a
+// pre-built Probes set.
+//
+// Cohorts are processed in definition order. Each cohort depletes a shared
+// excluded set before the next cohort runs. IncludeProbeIDs are placed first
+// (up to ProbeCount) then the orderer fills remaining slots. ExcludeProbeIDs
+// are skipped silently throughout. Included probes bypass H3 cell capacity.
+//
+// H3 cell capacity enforcement uses cohort.Cfg.Cities for per-cell density
+// coefficients. h3Resolution is the global geo_diversity setting.
+//
+// probes must be closed before calling Select.
+func Select(
+	ctx context.Context,
+	probes *Probes,
+	cohorts []config.MeasurementCohort,
+	orderer ProbeOrderer,
+	h3Resolution int,
+) ([]SelectedCohort, error) {
+	// Build a probe map by ID for O(1) IncludeProbeIDs lookup.
+	probeByID := make(map[uint32]snapshot.Probe, len(probes.Slice()))
+	for _, p := range probes.Slice() {
+		probeByID[p.ID] = p
+	}
+
+	// interCohortExcluded tracks IDs consumed by earlier cohorts in this run.
+	interCohortExcluded := make(map[uint32]struct{})
+	results := make([]SelectedCohort, 0, len(cohorts))
+
+	for _, cohort := range cohorts {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+
+		// cohortExcluded = inter-cohort excluded ∪ cohort.ExcludeProbeIDs.
+		cohortExcluded := make(map[uint32]struct{}, len(interCohortExcluded)+len(cohort.ExcludeProbeIDs))
+		for id := range interCohortExcluded {
+			cohortExcluded[id] = struct{}{}
+		}
+		for _, id := range cohort.ExcludeProbeIDs {
+			cohortExcluded[id] = struct{}{}
+		}
+
+		// Build per-cohort cell density coefficient map from cohort.Cfg.Cities.
+		cellCoef := make(map[h3.Cell]float64)
+		for _, p := range probes.Slice() {
+			cell := h3.LatLonToCell(p.Lat, p.Lon, h3Resolution)
+			coef := maxCityCoef(p, cohort.Cfg.Cities)
+			if coef > cellCoef[cell] {
+				cellCoef[cell] = coef
+			}
+		}
+
+		occ := NewH3Occupancy()
+		selected := make([]snapshot.Probe, 0, cohort.ProbeCount)
+		remaining := cohort.ProbeCount
+
+		// Process IncludeProbeIDs first. They bypass H3 cell capacity.
+		for _, id := range cohort.IncludeProbeIDs {
+			if remaining <= 0 {
+				break
+			}
+			if _, excluded := cohortExcluded[id]; excluded {
+				continue
+			}
+			p, ok := probeByID[id]
+			if !ok {
+				continue
+			}
+			selected = append(selected, p)
+			cohortExcluded[id] = struct{}{}
+			remaining--
+		}
+
+		// Fill remaining slots from the ordered probe list.
+		if remaining > 0 {
+			ordered := orderer(probes, cohort.Cfg)
+			for _, p := range ordered {
+				if remaining <= 0 {
+					break
+				}
+				if _, excluded := cohortExcluded[p.ID]; excluded {
+					continue
+				}
+				cell := h3.LatLonToCell(p.Lat, p.Lon, h3Resolution)
+				cap := cellCapacity(cohort.MaxProbesPerCell, cellCoef[cell])
+				if occ.Count(cell) >= cap {
+					continue
+				}
+				selected = append(selected, p)
+				occ.Add(cell)
+				cohortExcluded[p.ID] = struct{}{}
+				remaining--
+			}
+		}
+
+		// Add all selected IDs to inter-cohort excluded set for subsequent cohorts.
+		for _, p := range selected {
+			interCohortExcluded[p.ID] = struct{}{}
+		}
+
+		results = append(results, SelectedCohort{Cohort: cohort, Probes: selected})
+	}
+
+	return results, nil
 }
 
 // H3Occupancy tracks how many probes have been placed in each H3 cell
@@ -38,120 +257,15 @@ func (o *H3Occupancy) Add(cell h3.Cell) {
 	o.probeCounts[cell]++
 }
 
-// candidate is the pre-computed representation of a probe used during selection.
+// candidate is the pre-computed scoring representation of a probe used during
+// ordering. The cell and coef fields are unused by the orderer; only probe,
+// band, and hash are needed for sorting and interleaving.
 type candidate struct {
 	probe snapshot.Probe
 	band  Band
 	hash  uint64
-	cell  h3.Cell
-	coef  float64 // effective density coefficient from city overrides; ≥1.0
-}
-
-// Select runs the multi-cohort probe selection algorithm against snap using the
-// parameters in cfg. Each probe appears in at most one cohort (no overlap).
-//
-// The algorithm:
-//  1. Filter hard-excluded probes.
-//  2. Score remaining probes and sort by (Band DESC, hash ASC, ID ASC).
-//  3. Reorder by continental interleaving: within each band tier, round-robin
-//     through the six geographic zones so no single region dominates.
-//  4. Pre-compute per-cell density coefficient from city config.
-//  5. For each cohort, walk the interleaved list in order, skipping
-//     already-selected probes and H3 cells that have reached capacity,
-//     until the cohort target is met.
-//
-// Cohorts are processed in the order they appear in cfg. Context cancellation is
-// checked between cohorts.
-func Select(ctx context.Context, snap snapshot.Snapshot, cfg config.Config) ([]SelectedCohort, error) {
-	res := cfg.GeoDiversity.H3Resolution
-
-	// Step 1+2: build candidates, filter excluded, score, sort.
-	candidates := buildCandidates(snap.Probes, cfg, res)
-
-	// Step 3: reorder by continental interleaving within each band tier.
-	// This ensures that within a cohort, no single geographic zone can fill all
-	// slots before other zones have had a turn — regardless of how scoring weights
-	// are tuned.
-	candidates = interleaveContinents(candidates)
-
-	// Step 4: pre-compute per-cell max density coefficient.
-	// A cell inherits the highest coefficient of any probe whose coordinates
-	// fall within a city's radius. This is a proxy for the cell center: at
-	// resolution 3 (~12 000 km² cells, ~60 km edge) the difference is small.
-	cellCoef := make(map[h3.Cell]float64, len(candidates))
-	for _, c := range candidates {
-		if c.coef > cellCoef[c.cell] {
-			cellCoef[c.cell] = c.coef
-		}
-	}
-
-	// Step 5: cohort-by-cohort selection.
-	selected := make(map[uint32]struct{}, len(candidates))
-	cohorts := make([]SelectedCohort, 0, len(cfg.Cohorts))
-
-	for _, cohortCfg := range cfg.Cohorts {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-
-		occ := NewH3Occupancy()
-		probes := make([]snapshot.Probe, 0, cohortCfg.ProbeCount)
-
-		for i := range candidates {
-			if len(probes) >= cohortCfg.ProbeCount {
-				break
-			}
-			cand := &candidates[i]
-			if _, seen := selected[cand.probe.ID]; seen {
-				continue
-			}
-			cap := cellCapacity(cohortCfg.MaxProbesPerCell, cellCoef[cand.cell])
-			if occ.Count(cand.cell) >= cap {
-				continue
-			}
-			probes = append(probes, cand.probe)
-			occ.Add(cand.cell)
-			selected[cand.probe.ID] = struct{}{}
-		}
-
-		cohorts = append(cohorts, SelectedCohort{Cohort: cohortCfg, Probes: probes})
-	}
-
-	return cohorts, nil
-}
-
-// buildCandidates filters hard-excluded probes, computes per-probe scoring
-// metadata, and returns a sorted candidate slice.
-func buildCandidates(probes []snapshot.Probe, cfg config.Config, res int) []candidate {
-	candidates := make([]candidate, 0, len(probes))
-	for _, p := range probes {
-		if HardExcluded(p, cfg.ExcludeTags) {
-			continue
-		}
-		score := Score(p, cfg.Scoring) + cityScoreBonus(p, cfg.Cities)
-		band, hash := SortKey(p, score, cfg.Scoring.BandThresholds.Effective())
-		candidates = append(candidates, candidate{
-			probe: p,
-			band:  band,
-			hash:  hash,
-			cell:  h3.LatLonToCell(p.Lat, p.Lon, res),
-			coef:  maxCityCoef(p, cfg.Cities),
-		})
-	}
-
-	// Sort: Band DESC, hash ASC, probe ID ASC (total order — no undefined ties).
-	sort.Slice(candidates, func(i, j int) bool {
-		a, b := candidates[i], candidates[j]
-		if a.band != b.band {
-			return a.band > b.band
-		}
-		if a.hash != b.hash {
-			return a.hash < b.hash
-		}
-		return a.probe.ID < b.probe.ID
-	})
-
-	return candidates
+	cell  h3.Cell // unused by orderer; reserved for future use
+	coef  float64 // unused by orderer; reserved for future use
 }
 
 // cellCapacity returns the maximum number of probes allowed in a cell for one
@@ -168,41 +282,12 @@ func cellCapacity(baseMax int, coef float64) int {
 	return n
 }
 
-// cityScoreBonus returns the sum of score weights from all cities whose radius
-// covers probe p. Returns 0 if no city applies or all matching cities have Score=0.
-func cityScoreBonus(p snapshot.Probe, cities []config.CityConfig) int {
-	bonus := 0
-	for _, city := range cities {
-		if city.Score != 0 && haversineKm(p.Lat, p.Lon, city.Lat, city.Lon) <= city.RadiusKm {
-			bonus += city.Score
-		}
-	}
-	return bonus
-}
-
-// maxCityCoef returns the density coefficient to apply to probe p. If the probe
-// falls within multiple city radii, the highest coefficient wins (boost takes
-// priority). Returns 1.0 if no city applies.
-func maxCityCoef(p snapshot.Probe, cities []config.CityConfig) float64 {
-	coef := 1.0
-	matched := false
-	for _, city := range cities {
-		if haversineKm(p.Lat, p.Lon, city.Lat, city.Lon) <= city.RadiusKm {
-			if !matched || city.DensityCoefficient > coef {
-				coef = city.DensityCoefficient
-			}
-			matched = true
-		}
-	}
-	return coef
-}
-
 // interleaveContinents reorders a sorted candidate slice so that within each
 // band tier, probes are distributed across geographic zones in round-robin
 // order before any zone gets a second pick.
 //
 // Input must already be sorted by (Band DESC, hash ASC) — as produced by
-// buildCandidates. The function preserves that per-zone order within each band.
+// NewDefaultOrderer. The function preserves that per-zone order within each band.
 //
 // Example with Band-A candidates NA=[1,2,3], EU=[4,5,6], APAC=[7], LATAM=[8,9]:
 //
@@ -242,19 +327,4 @@ func interleaveContinents(candidates []candidate) []candidate {
 	}
 
 	return result
-}
-
-// haversineKm returns the great-circle distance in kilometres between two
-// (lat, lon) coordinate pairs using the haversine formula.
-func haversineKm(lat1, lon1, lat2, lon2 float64) float64 {
-	const earthRadiusKm = 6371.0
-
-	dLat := (lat2 - lat1) * math.Pi / 180
-	dLon := (lon2 - lon1) * math.Pi / 180
-
-	a := math.Sin(dLat/2)*math.Sin(dLat/2) +
-		math.Cos(lat1*math.Pi/180)*math.Cos(lat2*math.Pi/180)*
-			math.Sin(dLon/2)*math.Sin(dLon/2)
-
-	return earthRadiusKm * 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
 }
