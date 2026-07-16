@@ -28,10 +28,6 @@ func newApplyCmd(f *globalFlags, deps Deps) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if len(cfg.Measurements) == 0 {
-				return errors.New("no measurements defined in config: add at least one measurement before running apply")
-			}
-
 			snap, err := snapshot.Load(f.SnapshotFile)
 			if err != nil {
 				return err
