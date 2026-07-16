@@ -24,6 +24,39 @@ func NewApplyClient(apiKey string, verbose bool, codec plan.TagCodec) (*ApplyCli
 	return &ApplyClient{MsmClient: *msm}, nil
 }
 
+// ValidateMsmSpec builds the goat measurement spec locally and calls GetApiJson
+// to check for structural errors without making any API call. Use this during
+// plan to surface spec problems before apply.
+func ValidateMsmSpec(spec plan.MsmSpec) error {
+	ms := goat.NewMeasurementSpec()
+	baseOpts := &goat.BaseOptions{Interval: uint(spec.Interval)}
+	af := uint(spec.AF)
+
+	var defErr error
+	switch spec.Type {
+	case plan.MsmTypeDNS:
+		defErr = ms.AddDns("validate", "", af, baseOpts, &goat.DnsOptions{Type: "A", Argument: spec.Target, UseResolver: true})
+	case plan.MsmTypePing:
+		defErr = ms.AddPing("validate", spec.Target, af, baseOpts, nil)
+	case plan.MsmTypeTLS:
+		defErr = ms.AddTls("validate", spec.Target, af, baseOpts, nil)
+	case plan.MsmTypeTraceroute:
+		defErr = ms.AddTrace("validate", spec.Target, af, baseOpts, nil)
+	default:
+		return fmt.Errorf("unsupported measurement type %q", spec.Type)
+	}
+	if defErr != nil {
+		return fmt.Errorf("invalid measurement spec: %w", defErr)
+	}
+
+	// GetApiJson requires at least one probe entry; use a placeholder.
+	if err := ms.AddProbesList([]uint{1}); err != nil {
+		return err
+	}
+	_, err := ms.GetApiJson()
+	return err
+}
+
 // CreateMeasurement creates a new RIPE Atlas measurement from spec.
 // The description embeds the atlasctl tag so that LiveDiff can reconcile
 // state against the live API.
@@ -46,7 +79,9 @@ func (c *ApplyClient) CreateMeasurement(ctx context.Context, spec plan.MsmSpec) 
 	var defErr error
 	switch spec.Type {
 	case plan.MsmTypeDNS:
-		defErr = ms.AddDns(desc, spec.Target, af, baseOpts, &goat.DnsOptions{Type: "A"})
+		// spec.Target is the domain to resolve (query_argument). DNS measurements
+		// use the probe's default resolver; no explicit nameserver target is set.
+		defErr = ms.AddDns(desc, "", af, baseOpts, &goat.DnsOptions{Type: "A", Argument: spec.Target, UseResolver: true})
 	case plan.MsmTypePing:
 		defErr = ms.AddPing(desc, spec.Target, af, baseOpts, nil)
 	case plan.MsmTypeTLS:
