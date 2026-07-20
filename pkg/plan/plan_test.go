@@ -141,7 +141,7 @@ func TestStateFile_SetDeleteRecord(t *testing.T) {
 
 func TestDiff_Create(t *testing.T) {
 	key := plan.MsmKey{Name: "dns-canary", Cohort: "high-freq"}
-	desired := map[plan.MsmKey]plan.DesiredMsm{
+	desired := map[plan.MsmKey]plan.MsmSpec{
 		key: {Target: "canary.supabase.co", Type: plan.MsmTypeDNS, Interval: 60, ProbeIDs: []uint32{1, 2, 3}},
 	}
 	cs := plan.Diff(desired, plan.NewStateFile())
@@ -156,7 +156,7 @@ func TestDiff_NoOp(t *testing.T) {
 	key := plan.MsmKey{Name: "dns-canary", Cohort: "high-freq"}
 	probes := []uint32{1001, 2002, 3003}
 
-	desired := map[plan.MsmKey]plan.DesiredMsm{
+	desired := map[plan.MsmKey]plan.MsmSpec{
 		key: {Target: "canary.supabase.co", Type: plan.MsmTypeDNS, Interval: 60, ProbeIDs: probes},
 	}
 	state := sampleState(struct {
@@ -181,7 +181,7 @@ func TestDiff_Stop(t *testing.T) {
 	}{"dns-canary", "high-freq", dnsRecord(99999999, 1, 2, 3)})
 
 	// Empty desired — everything in state should be stopped.
-	cs := plan.Diff(map[plan.MsmKey]plan.DesiredMsm{}, state)
+	cs := plan.Diff(map[plan.MsmKey]plan.MsmSpec{}, state)
 
 	c := findChange(t, cs, key, plan.ChangeStop)
 	assert.Equal(t, uint64(99999999), c.MsmID)
@@ -190,7 +190,7 @@ func TestDiff_Stop(t *testing.T) {
 func TestDiff_ProbeSetChanged(t *testing.T) {
 	key := plan.MsmKey{Name: "dns-canary", Cohort: "high-freq"}
 
-	desired := map[plan.MsmKey]plan.DesiredMsm{
+	desired := map[plan.MsmKey]plan.MsmSpec{
 		// Remove 1, keep 2+3, add 4.
 		key: {Target: "canary.supabase.co", Type: plan.MsmTypeDNS, Interval: 60, ProbeIDs: []uint32{2, 3, 4}},
 	}
@@ -219,7 +219,7 @@ func TestDiff_ProbeSetChanged(t *testing.T) {
 
 func TestDiff_ProbeSetAddsOnly(t *testing.T) {
 	key := plan.MsmKey{Name: "ping-edge", Cohort: "low-freq"}
-	desired := map[plan.MsmKey]plan.DesiredMsm{
+	desired := map[plan.MsmKey]plan.MsmSpec{
 		key: {Target: "1.2.3.4", Type: plan.MsmTypePing, Interval: 900, ProbeIDs: []uint32{1, 2, 3, 4}},
 	}
 	state := sampleState(struct {
@@ -240,7 +240,7 @@ func TestDiff_StructuralChange(t *testing.T) {
 	key := plan.MsmKey{Name: "dns-canary", Cohort: "high-freq"}
 
 	// Interval changed: 60 → 120.
-	desired := map[plan.MsmKey]plan.DesiredMsm{
+	desired := map[plan.MsmKey]plan.MsmSpec{
 		key: {Target: "canary.supabase.co", Type: plan.MsmTypeDNS, Interval: 120, ProbeIDs: []uint32{1, 2}},
 	}
 	state := sampleState(struct {
@@ -267,7 +267,7 @@ func TestDiff_StructuralChange(t *testing.T) {
 
 func TestDiff_StructuralChange_TargetChanged(t *testing.T) {
 	key := plan.MsmKey{Name: "dns-canary", Cohort: "high-freq"}
-	desired := map[plan.MsmKey]plan.DesiredMsm{
+	desired := map[plan.MsmKey]plan.MsmSpec{
 		key: {Target: "new.supabase.co", Type: plan.MsmTypeDNS, Interval: 60, ProbeIDs: []uint32{1}},
 	}
 	state := sampleState(struct {
@@ -287,7 +287,7 @@ func TestDiff_MultipleEntries(t *testing.T) {
 	k2 := plan.MsmKey{Name: "tls-canary", Cohort: "high-freq"}
 	k3 := plan.MsmKey{Name: "ping-edge", Cohort: "low-freq"}
 
-	desired := map[plan.MsmKey]plan.DesiredMsm{
+	desired := map[plan.MsmKey]plan.MsmSpec{
 		k1: {Target: "canary.supabase.co", Type: plan.MsmTypeDNS, Interval: 60, ProbeIDs: []uint32{1}},
 		k2: {Target: "canary.supabase.co", Type: plan.MsmTypeTLS, Interval: 60, ProbeIDs: []uint32{1}},
 		// k3 is absent from desired → should produce Stop.
@@ -373,7 +373,7 @@ func TestEstimateCredits(t *testing.T) {
 	//   credits/day = 4800 × 3 = 14400
 	//
 	// total daily = 446400, weekly = 3124800
-	desired := map[plan.MsmKey]plan.DesiredMsm{
+	desired := map[plan.MsmKey]plan.MsmSpec{
 		{Name: "dns-canary", Cohort: "high-freq"}: {
 			Target: "canary.supabase.co", Type: plan.MsmTypeDNS,
 			Interval: 60, ProbeIDs: makeProbeIDs(30),
@@ -398,7 +398,7 @@ func TestEstimateCredits(t *testing.T) {
 }
 
 func TestEstimateCredits_Empty(t *testing.T) {
-	est := plan.EstimateCredits(map[plan.MsmKey]plan.DesiredMsm{})
+	est := plan.EstimateCredits(map[plan.MsmKey]plan.MsmSpec{})
 	assert.Equal(t, int64(0), est.Daily)
 	assert.Equal(t, int64(0), est.Weekly)
 	assert.Empty(t, est.Lines)

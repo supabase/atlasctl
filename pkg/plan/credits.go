@@ -28,7 +28,7 @@ type CreditEstimate struct {
 //	credits/day = probe_count × credits_per_result(type) × (86400 / interval_seconds)
 //
 // Lines is sorted by descending PerDay so the most expensive entries appear first.
-func EstimateCredits(desired map[MsmKey]DesiredMsm) CreditEstimate {
+func EstimateCredits(desired map[MsmKey]MsmSpec) CreditEstimate {
 	var est CreditEstimate
 	for key, d := range desired {
 		cpd := int64(len(d.ProbeIDs)) *

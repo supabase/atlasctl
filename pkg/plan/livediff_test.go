@@ -28,10 +28,10 @@ func taggedInfo(id uint64, name, round string) plan.MsmInfo {
 
 // consistentSetup returns a desired map, state file, and FakeMsmClient that all
 // agree with each other — the baseline "nothing to do" scenario.
-func consistentSetup() (map[plan.MsmKey]plan.DesiredMsm, plan.StateFile, *plan.FakeMsmClient) {
+func consistentSetup() (map[plan.MsmKey]plan.MsmSpec, plan.StateFile, *plan.FakeMsmClient) {
 	key := plan.MsmKey{Name: "dns-canary", Cohort: "high-freq"}
 
-	desired := map[plan.MsmKey]plan.DesiredMsm{
+	desired := map[plan.MsmKey]plan.MsmSpec{
 		key: {Target: "canary.supabase.co", Type: plan.MsmTypeDNS, Interval: 60, ProbeIDs: []uint32{1, 2}},
 	}
 
@@ -75,7 +75,7 @@ func TestLiveDiff_Orphan(t *testing.T) {
 
 	cs, warnings, err := plan.LiveDiff(
 		context.Background(),
-		map[plan.MsmKey]plan.DesiredMsm{},
+		map[plan.MsmKey]plan.MsmSpec{},
 		plan.NewStateFile(),
 		client,
 	)
@@ -101,7 +101,7 @@ func TestLiveDiff_OrphanMalformedTag(t *testing.T) {
 
 	_, warnings, err := plan.LiveDiff(
 		context.Background(),
-		map[plan.MsmKey]plan.DesiredMsm{},
+		map[plan.MsmKey]plan.MsmSpec{},
 		plan.NewStateFile(),
 		client,
 	)
@@ -118,7 +118,7 @@ func TestLiveDiff_Ghost(t *testing.T) {
 	// State references an MsmID that is absent from the live API list.
 	key := plan.MsmKey{Name: "dns-canary", Cohort: "high-freq"}
 
-	desired := map[plan.MsmKey]plan.DesiredMsm{
+	desired := map[plan.MsmKey]plan.MsmSpec{
 		key: {Target: "canary.supabase.co", Type: plan.MsmTypeDNS, Interval: 60, ProbeIDs: []uint32{1}},
 	}
 	state := plan.NewStateFile()
@@ -156,7 +156,7 @@ func TestLiveDiff_OrphanAndGhostTogether(t *testing.T) {
 	orphan := taggedInfo(222, "tls-canary", "mid-freq")
 	client := &plan.FakeMsmClient{ListResult: []plan.MsmInfo{orphan}}
 
-	desired := map[plan.MsmKey]plan.DesiredMsm{
+	desired := map[plan.MsmKey]plan.MsmSpec{
 		{Name: "dns-canary", Cohort: "high-freq"}: {
 			Target: "canary.supabase.co", Type: plan.MsmTypeDNS, Interval: 60, ProbeIDs: []uint32{1},
 		},
@@ -181,7 +181,7 @@ func TestLiveDiff_ListError(t *testing.T) {
 
 	_, _, err := plan.LiveDiff(
 		context.Background(),
-		map[plan.MsmKey]plan.DesiredMsm{},
+		map[plan.MsmKey]plan.MsmSpec{},
 		plan.NewStateFile(),
 		client,
 	)
@@ -192,7 +192,7 @@ func TestLiveDiff_ListError(t *testing.T) {
 
 func TestLiveDiff_ContextCancel(t *testing.T) {
 	_, state, client := consistentSetup()
-	desired := map[plan.MsmKey]plan.DesiredMsm{}
+	desired := map[plan.MsmKey]plan.MsmSpec{}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // already cancelled before the call
@@ -209,7 +209,7 @@ func TestLiveDiff_ContextCancelDuringList(t *testing.T) {
 
 	blockingClient := &blockOnListClient{cancel: cancel}
 
-	_, _, err := plan.LiveDiff(ctx, map[plan.MsmKey]plan.DesiredMsm{}, plan.NewStateFile(), blockingClient)
+	_, _, err := plan.LiveDiff(ctx, map[plan.MsmKey]plan.MsmSpec{}, plan.NewStateFile(), blockingClient)
 
 	assert.ErrorIs(t, err, context.Canceled)
 }

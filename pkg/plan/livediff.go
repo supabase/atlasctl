@@ -73,7 +73,7 @@ type DriftWarning struct {
 // the client calls, which themselves should honour cancellation.
 func LiveDiff(
 	ctx context.Context,
-	desired map[MsmKey]DesiredMsm,
+	desired map[MsmKey]MsmSpec,
 	state StateFile,
 	client MsmClient,
 ) (Changeset, []DriftWarning, error) {

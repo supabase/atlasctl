@@ -12,15 +12,6 @@ type MsmKey struct {
 	Cohort string
 }
 
-// DesiredMsm describes the fully-resolved desired state for one (name, cohort) pair.
-type DesiredMsm struct {
-	Target   string
-	Type     MsmType
-	AF       int // address family: 4 or 6
-	Interval int
-	ProbeIDs []uint32
-}
-
 // ChangeKind classifies a single change operation.
 type ChangeKind string
 
@@ -38,7 +29,7 @@ type Change struct {
 	Key  MsmKey
 
 	// Desired is populated for ChangeCreate.
-	Desired *DesiredMsm
+	Desired *MsmSpec
 	// MsmID is populated for ChangeStop, ChangeAddProbes, ChangeRemoveProbes,
 	// and ChangeNoOp (the live measurement ID from state).
 	MsmID uint64
@@ -55,7 +46,7 @@ type Changeset []Change
 // DesiredState builds the desired measurement map from the config and the
 // selected probe cohorts. Keys are (measurement name, cohort name); values
 // describe the fully-resolved target state including probe IDs.
-func DesiredState(cfg config.Config, cohorts []selection.SelectedCohort) map[MsmKey]DesiredMsm {
+func DesiredState(cfg config.Config, cohorts []selection.SelectedCohort) map[MsmKey]MsmSpec {
 	// Index selected cohorts by name for O(1) lookup.
 	cohortProbes := make(map[string][]uint32, len(cohorts))
 	for _, r := range cohorts {
@@ -71,10 +62,12 @@ func DesiredState(cfg config.Config, cohorts []selection.SelectedCohort) map[Msm
 		cohortInterval[r.Name] = r.IntervalSeconds
 	}
 
-	desired := make(map[MsmKey]DesiredMsm)
+	desired := make(map[MsmKey]MsmSpec)
 	for _, msm := range cfg.Measurements {
 		for _, cohortName := range msm.Cohorts {
-			desired[MsmKey{Name: msm.Name, Cohort: cohortName}] = DesiredMsm{
+			key := MsmKey{Name: msm.Name, Cohort: cohortName}
+			desired[key] = MsmSpec{
+				Key:      key,
 				Target:   msm.Target,
 				Type:     MsmType(msm.Type),
 				AF:       msm.AF,
@@ -92,7 +85,7 @@ func DesiredState(cfg config.Config, cohorts []selection.SelectedCohort) map[Msm
 // Structural attributes (Target, Type, Interval) are immutable — a change in
 // any of them produces a Stop of the old measurement and a Create of a new one.
 // Probe set changes are handled by AddProbes / RemoveProbes without recreating.
-func Diff(desired map[MsmKey]DesiredMsm, state StateFile) Changeset {
+func Diff(desired map[MsmKey]MsmSpec, state StateFile) Changeset {
 	var changes Changeset
 
 	// Pass 1: reconcile each desired entry against state.
@@ -145,7 +138,7 @@ func Diff(desired map[MsmKey]DesiredMsm, state StateFile) Changeset {
 
 // isStructuralChange reports whether any immutable attribute has changed between
 // the recorded state and the desired state.
-func isStructuralChange(rec MsmRecord, want DesiredMsm) bool {
+func isStructuralChange(rec MsmRecord, want MsmSpec) bool {
 	return rec.Target != want.Target ||
 		MsmType(rec.Type) != want.Type ||
 		rec.AF != want.AF ||

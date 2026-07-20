@@ -80,14 +80,8 @@ func Apply(
 					Msg("[dry-run] would create measurement")
 				continue
 			}
-			spec := MsmSpec{
-				Key:      ch.Key,
-				Target:   ch.Desired.Target,
-				Type:     ch.Desired.Type,
-				AF:       ch.Desired.AF,
-				Interval: ch.Desired.Interval,
-				ProbeIDs: ch.Desired.ProbeIDs,
-			}
+			spec := *ch.Desired
+			spec.Key = ch.Key // ch.Key is authoritative
 			id, err := client.CreateMeasurement(ctx, spec)
 			if err != nil {
 				log.Error().Err(err).
