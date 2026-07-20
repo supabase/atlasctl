@@ -150,6 +150,72 @@ func TestApply_DryRunFlag(t *testing.T) {
 	assert.True(t, os.IsNotExist(statErr), "--dry-run must not write the state file")
 }
 
+// emptyMeasurementsConfig is a valid config with no measurements defined.
+const emptyMeasurementsConfig = `
+measurements: []
+`
+
+func TestPlan_EmptyMeasurements_StopsAll(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "atlasctl.yaml")
+	snapPath := filepath.Join(dir, "snapshot.json")
+	statePath := filepath.Join(dir, "state.yaml")
+
+	writeFile(t, cfgPath, emptyMeasurementsConfig)
+	saveSnap(t, snapPath)
+
+	// Seed state with one live measurement so there is something to stop.
+	state := plan.NewStateFile()
+	state.SetRecord("dns-canary", "high-freq", plan.MsmRecord{MsmID: 99001})
+	require.NoError(t, plan.SaveState(statePath, state))
+
+	fakeMsm := &plan.FakeMsmClient{ListResult: nil}
+	deps := testDeps(fakeMsm, &plan.FakeApplyClient{})
+
+	out, _, err := run(deps,
+		"--config", cfgPath,
+		"--snapshot", snapPath,
+		"--state", statePath,
+		"--api-key", testAPIKey,
+		"plan",
+	)
+
+	require.NoError(t, err)
+	assert.Contains(t, out, "stop", "plan should show a stop for the orphaned state entry")
+}
+
+func TestApply_EmptyMeasurements_StopsAll(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "atlasctl.yaml")
+	snapPath := filepath.Join(dir, "snapshot.json")
+	statePath := filepath.Join(dir, "state.yaml")
+
+	writeFile(t, cfgPath, emptyMeasurementsConfig)
+	saveSnap(t, snapPath)
+
+	state := plan.NewStateFile()
+	state.SetRecord("dns-canary", "high-freq", plan.MsmRecord{MsmID: 99001})
+	require.NoError(t, plan.SaveState(statePath, state))
+
+	fakeApply := &plan.FakeApplyClient{}
+	deps := Deps{
+		NewSnapshotClient: func(string, bool) snapshot.Client { return &snapshot.FakeClient{} },
+		NewMsmClient:      func(string, bool, plan.TagCodec) (plan.MsmClient, error) { return fakeApply, nil },
+		NewApplyClient:    func(string, bool, plan.TagCodec) (plan.ApplyClient, error) { return fakeApply, nil },
+	}
+
+	_, _, err := run(deps,
+		"--config", cfgPath,
+		"--snapshot", snapPath,
+		"--state", statePath,
+		"--api-key", testAPIKey,
+		"apply", "--yes",
+	)
+
+	require.NoError(t, err)
+	assert.Equal(t, []uint64{99001}, fakeApply.StoppedIDs, "apply should stop the measurement from state")
+}
+
 // ── ensure pkg/ tests still pass: compile-time check ─────────────────────────
 
 // TestPkgImportDirection verifies that cmd/ does not leak into pkg/. This is a
