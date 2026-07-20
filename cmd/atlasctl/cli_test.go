@@ -24,11 +24,11 @@ h3_resolution: 3
 cohorts:
   - name: high-freq
     probe_count: 1
-    interval_seconds: 60
     max_probes_per_cell: 1
 measurements:
   - name: dns-canary
     type: dns
+    interval_seconds: 60
     target: canary.supabase.co
     cohorts:
       - high-freq

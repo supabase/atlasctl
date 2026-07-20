@@ -318,15 +318,16 @@ func TestDiff_MultipleEntries(t *testing.T) {
 func TestDesiredState(t *testing.T) {
 	cfg := config.Config{
 		Cohorts: []config.Cohort{
-			{Name: "high-freq", ProbeCount: 2, IntervalSeconds: 60, MaxProbesPerCell: 1},
-			{Name: "low-freq", ProbeCount: 3, IntervalSeconds: 900, MaxProbesPerCell: 2},
+			{Name: "high-freq", ProbeCount: 2, MaxProbesPerCell: 1},
+			{Name: "low-freq", ProbeCount: 3, MaxProbesPerCell: 2},
 		},
 		Measurements: []config.Measurement{
 			{
 				Name: "dns-canary", Type: config.TypeDNS, Target: "canary.supabase.co",
-				Cohorts: []string{"high-freq", "low-freq"},
+				IntervalSeconds: 60,
+				Cohorts:         []string{"high-freq", "low-freq"},
 			},
-			{Name: "ping-edge", Type: config.TypePing, Target: "1.2.3.4", Cohorts: []string{"low-freq"}},
+			{Name: "ping-edge", Type: config.TypePing, Target: "1.2.3.4", IntervalSeconds: 900, Cohorts: []string{"low-freq"}},
 		},
 	}
 
@@ -352,7 +353,7 @@ func TestDesiredState(t *testing.T) {
 	assert.ElementsMatch(t, []uint32{10, 20}, d.ProbeIDs)
 
 	d = desired[plan.MsmKey{Name: "dns-canary", Cohort: "low-freq"}]
-	assert.Equal(t, 900, d.Interval)
+	assert.Equal(t, 60, d.Interval)
 	assert.ElementsMatch(t, []uint32{30, 40, 50}, d.ProbeIDs)
 
 	d = desired[plan.MsmKey{Name: "ping-edge", Cohort: "low-freq"}]
