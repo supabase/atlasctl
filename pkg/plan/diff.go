@@ -43,41 +43,30 @@ type Change struct {
 // produces non-deterministic ordering, so callers must not depend on it.
 type Changeset []Change
 
-// DesiredState builds the desired measurement map from the config and the
-// selected probe cohorts. Keys are (measurement name, cohort name); values
+// DesiredState builds the desired measurement map from per-measurement
+// selection results. selected maps measurement name to its ordered cohort
+// selection output. Keys are (measurement name, cohort name); values
 // describe the fully-resolved target state including probe IDs.
-func DesiredState(cfg config.Config, cohorts []selection.SelectedCohort) map[MsmKey]MsmSpec {
-	// Index selected cohorts by name for O(1) lookup.
-	cohortProbes := make(map[string][]uint32, len(cohorts))
-	for _, r := range cohorts {
-		ids := make([]uint32, len(r.Probes))
-		for i, p := range r.Probes {
-			ids[i] = p.ID
-		}
-		cohortProbes[r.Cohort.Name] = ids
-	}
-
-	//TODO: need this anymore?
-	/*
-		cohortInterval := make(map[string]int, len(cfg.Cohorts))
-		for _, r := range cfg.Cohorts {
-			cohortInterval[r.Name] = r.IntervalSeconds
-		}
-	*/
-
+func DesiredState(cfg config.Config, selected map[string][]selection.SelectedCohort) map[MsmKey]MsmSpec {
 	desired := make(map[MsmKey]MsmSpec)
 	for _, msm := range cfg.Measurements {
-		for _, cohortName := range msm.Cohorts {
-			key := MsmKey{Name: msm.Name, Cohort: cohortName}
-
+		cohorts, ok := selected[msm.Name]
+		if !ok {
+			continue
+		}
+		for _, sc := range cohorts {
+			key := MsmKey{Name: msm.Name, Cohort: sc.Cohort.Name}
+			ids := make([]uint32, len(sc.Probes))
+			for i, p := range sc.Probes {
+				ids[i] = p.ID
+			}
 			desired[key] = MsmSpec{
-				Key:    key,
-				Target: msm.Target,
-				Type:   MsmType(msm.Type),
-
+				Key:      key,
+				Target:   msm.Target,
+				Type:     MsmType(msm.Type),
 				AF:       msm.AF,
-				Interval: msm.IntervalSeconds,
-				ProbeIDs: cohortProbes[cohortName],
+				Interval: sc.Cohort.IntervalSeconds,
+				ProbeIDs: ids,
 			}
 		}
 	}

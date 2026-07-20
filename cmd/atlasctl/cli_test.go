@@ -20,18 +20,15 @@ const testAPIKey = "00000000-0000-0000-0000-000000000001"
 
 // minimalConfig is the smallest valid atlasctl.yaml for single-measurement tests.
 const minimalConfig = `
-h3_resolution: 3
-cohorts:
-  - name: high-freq
-    probe_count: 1
-    max_probes_per_cell: 1
 measurements:
   - name: dns-canary
     type: dns
-    interval_seconds: 60
     target: canary.supabase.co
     cohorts:
-      - high-freq
+      - name: high-freq
+        probe_count: 1
+        max_probes_per_cell: 1
+        interval_seconds: 60
 `
 
 // testDeps returns a Deps wired with the provided clients. Unused factories

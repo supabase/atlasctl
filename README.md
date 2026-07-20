@@ -12,7 +12,9 @@ The challenge is operational. RIPE Atlas measurements are created individually, 
 
 ## Cohorts
 
-atlasctl organizes probes into cohorts — named, non-overlapping groups built by the selection algorithm. Each probe belongs to exactly one cohort. Every (measurement, cohort) pair becomes one RIPE Atlas measurement with its own ID. This (name, cohort) pairing is the core resource identity throughout the workflow, config, state file, and drift detection.
+A cohort is a named probe tier within a measurement. Each (measurement, cohort) pair becomes one RIPE Atlas measurement with its own permanent ID. This pairing is the core resource identity throughout the workflow, config, state file, and drift detection.
+
+Cohorts within a measurement are filled in definition order. A probe selected for an earlier cohort is excluded from later cohorts within the same measurement. Different measurements select from the full probe pool independently, so the same physical probe can appear in cohorts across separate measurements.
 
 ## Workflow
 
@@ -136,68 +138,132 @@ Applied: 1 created, 1 updated, 1 stopped.
 
 ## Config
 
-A single YAML file describes cohorts, measurements, and probe selection criteria.
+A single YAML file describes measurements and probe selection criteria.
+
+### Minimal cohort configuration
+
+The only required fields per cohort are `probe_count`, `max_probes_per_cell`, and `interval_seconds`.
 
 ```yaml
-# Cohorts define named probe groups. Each (measurement, cohort) pair becomes one
-# RIPE Atlas measurement.
-cohorts:
-  - name: high-freq
-    count: 30
-    interval_seconds: 60
-    max_probes_per_cell: 1
-
-  - name: mid-freq
-    count: 60
-    interval_seconds: 300
-    max_probes_per_cell: 2
-
-  - name: low-freq
-    count: 100
-    interval_seconds: 900
-    max_probes_per_cell: 3
-
-# Measurements define what to measure and which cohorts to apply it to.
 measurements:
   - name: dns-canary
     type: dns
     target: canary.supabase.co
-    cohorts: [high-freq, mid-freq, low-freq]
+    cohorts:
+      - name: high-freq
+        probe_count: 30
+        max_probes_per_cell: 1
+        interval_seconds: 60
+```
+
+With no scoring config, every probe scores equally. The selection algorithm cycles through six continental zones (NA, EU, APAC, LATAM, MENA, SSA) in round-robin order and caps each H3 geographic cell at `max_probes_per_cell` probes. No tuning required.
+
+### Multiple cohorts per measurement
+
+A measurement can have multiple cohorts. Each cohort becomes one RIPE Atlas measurement with its own ID. Cohorts are filled in definition order: a probe selected for an earlier cohort is excluded from later cohorts within the same measurement.
+
+```yaml
+measurements:
+  - name: dns-canary
+    type: dns
+    target: canary.supabase.co
+    cohorts:
+      - name: high-freq
+        probe_count: 30
+        max_probes_per_cell: 1
+        interval_seconds: 60
+      - name: low-freq
+        probe_count: 100
+        max_probes_per_cell: 3
+        interval_seconds: 900
+```
+
+`high-freq` gets the 30 best-available probes. `low-freq` gets the next 100 best remaining.
+
+### Pinning and excluding specific probes
+
+Use `include_probe_ids` to force specific probes into a cohort regardless of scoring or H3 cell limits. Use `exclude_probe_ids` to prevent specific probes from appearing in a cohort. Both fields are per cohort.
+
+```yaml
+cohorts:
+  - name: high-freq
+    probe_count: 30
+    max_probes_per_cell: 1
+    interval_seconds: 60
+    include_probe_ids: [1001, 1002]   # always selected; bypass H3 cap
+    exclude_probe_ids: [9999]          # never selected in this cohort
+```
+
+### Adding scoring
+
+A `cfg` block on a cohort controls probe scoring. Higher-scoring probes are preferred within each continental zone. All scoring criteria are additive.
+
+```yaml
+cohorts:
+  - name: high-freq
+    probe_count: 30
+    max_probes_per_cell: 1
+    interval_seconds: 60
+    cfg:
+      asn:
+        7018: 10   # AT&T
+        7922: 8    # Comcast
+      tags:
+        office: 5
+        fibre: 2
+      countries:
+        BR: 5
+        US: 1
+      stability:
+        system-ipv4-stable-90d: 5
+```
+
+A probe matching ASN 7018, tagged `office`, in Brazil, with 90-day stability scores 1 (base) + 10 + 5 + 5 + 5 = 26.
+
+### Named presets
+
+When multiple cohorts or measurements share the same scoring config, define named presets under `cohort_configs` and reference them with `cfg_preset`.
+
+```yaml
+cohort_configs:
+  standard:
+    asn:
+      7018: 10
+      7922: 8
+    tags:
+      office: 5
+      fibre: 2
+    stability:
+      system-ipv4-stable-90d: 5
+
+measurements:
+  - name: dns-canary
+    type: dns
+    target: canary.supabase.co
+    cohorts:
+      - name: high-freq
+        probe_count: 30
+        max_probes_per_cell: 1
+        interval_seconds: 60
+        cfg_preset: standard
 
   - name: tls-canary
     type: tls
     target: canary.supabase.co
-    cohorts: [high-freq, mid-freq]
+    cohorts:
+      - name: high-freq
+        probe_count: 30
+        max_probes_per_cell: 1
+        interval_seconds: 60
+        cfg_preset: standard
+```
 
-  - name: ping-edge
-    type: ping
-    target: 162.159.36.1
-    cohorts: [low-freq]
+If both `cfg_preset` and `cfg` appear on the same cohort, the inline `cfg` wins as a complete replacement. There is no field-level merging.
 
-# Scoring controls which probes are preferred. All sections are optional.
-scoring:
-  asn:
-    7018: 10    # AT&T
-    7922: 8     # Comcast
-    28573: 8    # Claro Brazil (incident history, sparse region)
-    5650: 6     # Frontier
-  tags:
-    office: 5
-    datacentre: 4
-    lte: 3
-    fibre: 2
-    cable: 2
-    home: 1
-  countries:
-    BR: 5       # sparse coverage, high incident relevance
-    HN: 8       # very sparse, boost hard
-    US: 1
-    DE: 2
-  stability:
-    system-ipv4-stable-90d: 5
-    system-ipv4-stable-30d: 3
+### Global settings
 
-# Hard exclusions. These probes are never candidates.
+```yaml
+# Hard exclusions: probes with any of these tags are never candidates.
 exclude_tags:
   - broken
   - system-flakey-connection
@@ -205,146 +271,20 @@ exclude_tags:
   - system-ipv4-doesnt-work
 
 # H3 hexagonal grid resolution for geographic diversity (1-15, default 3).
-# Resolution 3 gives cells roughly the size of a state or province (~12,000 km2).
+# Resolution 3 gives cells roughly the size of a state or province (~12,000 km²).
 geo_diversity:
   h3_resolution: 3
-
-# City overrides relax the per-cell probe limit in specific areas.
-# Coordinates are always explicit (no runtime geocoding).
-cities:
-  - name: Ashburn
-    lat: 39.04
-    lon: -77.49
-    radius_km: 40
-    density_coefficient: 2.0
-  - name: Sao Paulo
-    lat: -23.55
-    lon: -46.63
-    radius_km: 60
-    density_coefficient: 3.0
-  - name: Frankfurt
-    lat: 50.11
-    lon: 8.68
-    density_coefficient: 0.7 # Frankfurt has too many probes
-  - name: Bellingham
-    lat: 48.7519
-    lon: -122.4787
-    radius_km: 40
-    score: 12 # raise score
-  - name: Berlin
-    lat: 52.520008
-    lon: 13.404954
-    radius_km: 70  # berlin is huge
-    score: -12 # downweight berlin
-
 ```
+
+For a complete reference of all configuration fields and the selection algorithm, see [docs/selection-reference.md](docs/selection-reference.md).
 
 ## Probe selection
 
-See [docs/bands-cohorts-explainer.md](docs/bands-cohorts-explainer.md) for a detailed explanation of how scoring bands, continental interleaving, and cohorts interact, including how to detect degenerate scoring configurations.
+See [docs/selection-reference.md](docs/selection-reference.md) for the complete config reference and algorithm walkthrough. See [docs/bands-cohorts-explainer.md](docs/bands-cohorts-explainer.md) for a detailed explanation of how scoring bands, continental interleaving, and cohorts interact.
 
-Probe selection is the central design problem. The RIPE Atlas probe pool has ~12,000 connected probes. atlasctl needs to pick a small subset that covers the right networks and geographies, assign them to cohorts, and keep those assignments stable as probes connect and disconnect over time.
+Every probe starts with a base score of 1. Per-cohort scoring config adds to that score. Scores are bucketed into four stability bands (A through D). Within each band, probes sort by a deterministic FNV-1a hash of the probe ID, making assignments stable across snapshot refreshes. Before slots are filled, probes are interleaved across six continental zones in round-robin order within each band, preventing the US and Europe-heavy pool from dominating small cohorts. The selection loop then walks the interleaved list and enforces the per-cell H3 limit.
 
-### Scoring
-
-Every probe starts with a base score of 1. Matching scoring criteria add to the score. All criteria are additive. A probe matching multiple criteria accumulates the sum.
-
-```
-  base:                      1
-  asn (7018, AT&T):        +10
-  tag (office):             +5
-  tag (fibre):              +2
-  stability (90d):          +5
-  country (US):             +1
-                           ---
-  total:                    24
-```
-
-### Bands and deterministic assignment
-
-Pure score-sorted selection is fragile: one probe disconnecting can cascade across all three cohorts. atlasctl avoids this by discretising scores into four bands, then using a deterministic hash of the probe ID as the tiebreaker within each band.
-
-```
-  Sort key: (band DESC, FNV-1a(probe_id) ASC)
-
-  Band A  score >= 15   High priority, multiple strong criteria
-  Band B  score 8-14    Single strong criterion
-  Band C  score 3-7     Moderate match
-  Band D  score 1-2     Weak or base match only
-```
-
-A probe's band changes only when its score crosses a threshold (requiring a tag or ASN change on the probe itself, which is rare). Within a band, `FNV-1a(probe_id)` is perfectly stable because probe IDs are permanent integers. When a probe disconnects, only its slot opens. The next probe in hash order fills it. No cascade beyond that one slot.
-
-### Cohort assignment
-
-Cohorts are filled in definition order. A probe selected for an earlier cohort is excluded from all subsequent cohorts. Each cohort walks the sorted candidate list (after prior-cohort probes are removed) and fills slots until the cohort's `count` is reached.
-
-```
-  high-freq  30 probes   first responders, maximum geographic spread
-  mid-freq   60 probes   regional coverage, fills ASN and tag diversity
-  low-freq   100 probes  depth, denser coverage in priority areas
-```
-
-### Geographic diversity
-
-Two mechanisms work together to spread probes across the globe: continental interleaving and H3 cell limits.
-
-#### Continental interleaving
-
-The RIPE Atlas probe pool is heavily concentrated in the US and Europe. Left to pure score ordering, a cohort of 40 probes can easily fill all slots from those two regions, leaving Asia-Pacific, Latin America, and Africa unrepresented regardless of how scoring weights are tuned.
-
-After scoring, probes are grouped into six continental zones:
-
-| Zone  | Countries                                          |
-|-------|----------------------------------------------------|
-| NA    | United States, Canada                              |
-| EU    | Europe (including Russia and the Caucasus)         |
-| APAC  | Asia-Pacific and Oceania                           |
-| LATAM | Latin America and the Caribbean                    |
-| MENA  | Middle East and North Africa                       |
-| SSA   | Sub-Saharan Africa                                 |
-
-Within each band tier, the selection walk interleaves zones in round-robin order before any zone gets a second pick. The effect is easiest to see with an example. Suppose a cohort has these Band B candidates:
-
-```
-  NA:    [probe 1, probe 2, probe 3, probe 4, probe 5]
-  EU:    [probe 6, probe 7, probe 8]
-  APAC:  [probe 9]
-  LATAM: [probe 10, probe 11]
-  MENA:  (none in Band B)
-  SSA:   (none in Band B)
-
-  Interleaved order:
-    pass 1:  NA-1,  EU-6,  APAC-9, LATAM-10
-    pass 2:  NA-2,  EU-7,          LATAM-11
-    pass 3:  NA-3,  EU-8
-    pass 4:  NA-4
-    pass 5:  NA-5
-```
-
-The H3 cell filter then applies to this reordered list. Selecting 8 probes from the example above yields 3 from NA, 3 from EU, 1 from APAC, and 1 from LATAM, rather than 5 from NA and 3 from EU.
-
-Band priority is fully preserved: Band A probes from any zone are exhausted before Band B probes from any zone enter the walk. Within a zone, probes are ordered by the same `(band DESC, FNV-1a(probe_id) ASC)` key as before, so within-zone assignment is stable across snapshot refreshes.
-
-#### H3 cell limits
-
-Each probe is mapped to an H3 hexagonal cell. The `max_probes_per_cell` limit per cohort prevents geographic clustering within a zone. City density overrides allow a higher limit in specific metros.
-
-| Resolution | Avg cell area  | Useful for              |
-|------------|----------------|-------------------------|
-| 2          | ~86,000 km2    | Large country region    |
-| 3          | ~12,000 km2    | State/province (default)|
-| 4          | ~1,770 km2     | Metro area              |
-| 5          | ~253 km2       | City                    |
-
-### Detection cadence
-
-| Event scope       | Source                    | Effective cadence                                    |
-|-------------------|---------------------------|------------------------------------------------------|
-| Global outage     | Cohort 1 (30 probes)       | ~60s, multiple probes fail simultaneously            |
-| Regional (US, EU) | Cohorts 1+2 (90 probes)    | 60s from cohort 1 probes in region, 5m from cohort 2  |
-| ISP-specific      | Cohorts 1+2+3 (190 probes) | Depends on probe count in that ASN                  |
-| Single city       | Mostly cohorts 2+3         | 5-15 min                                             |
+The primary lever for coverage is `probe_count`, not scoring weights. A cohort of 6 or more probes will cover all six continental zones. Scoring controls which probe from each zone is preferred, not whether a zone is represented at all.
 
 ## Resource model
 
