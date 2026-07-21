@@ -35,7 +35,9 @@ func ValidateMsmSpec(spec plan.MsmSpec) error {
 	var defErr error
 	switch spec.Type {
 	case plan.MsmTypeDNS:
-		defErr = ms.AddDns("validate", "", af, baseOpts, &goat.DnsOptions{Type: "A", Argument: spec.Target, UseResolver: true})
+		defErr = ms.AddDns("validate", "", af, baseOpts, &goat.DnsOptions{
+			Type: "A", Argument: spec.Target, UseResolver: true,
+		})
 	case plan.MsmTypePing:
 		defErr = ms.AddPing("validate", spec.Target, af, baseOpts, nil)
 	case plan.MsmTypeTLS:
@@ -69,10 +71,10 @@ func (c *ApplyClient) CreateMeasurement(ctx context.Context, spec plan.MsmSpec) 
 	}
 
 	ms := goat.NewMeasurementSpec()
-	ms.ApiKey(c.MsmClient.apiKey)
-	ms.Verbose(c.MsmClient.Verbose)
+	ms.ApiKey(c.apiKey)
+	ms.Verbose(c.Verbose)
 
-	desc := c.MsmClient.TagCodec.Format(spec.Key.Name, spec.Key.Cohort)
+	desc := c.TagCodec.Format(spec.Key.Name, spec.Key.Cohort)
 	baseOpts := &goat.BaseOptions{Interval: uint(spec.Interval)}
 	af := uint(spec.AF)
 
@@ -81,7 +83,10 @@ func (c *ApplyClient) CreateMeasurement(ctx context.Context, spec plan.MsmSpec) 
 	case plan.MsmTypeDNS:
 		// spec.Target is the domain to resolve (query_argument). DNS measurements
 		// use the probe's default resolver; no explicit nameserver target is set.
-		defErr = ms.AddDns(desc, "", af, baseOpts, &goat.DnsOptions{Type: "A", Argument: spec.Target, UseResolver: true})
+		defErr = ms.AddDns(desc, "", af, baseOpts, &goat.DnsOptions{
+			Type:     "A",
+			Argument: spec.Target, UseResolver: true,
+		})
 	case plan.MsmTypePing:
 		defErr = ms.AddPing(desc, spec.Target, af, baseOpts, nil)
 	case plan.MsmTypeTLS:
@@ -122,8 +127,8 @@ func (c *ApplyClient) StopMeasurement(ctx context.Context, id uint64) error {
 		return err
 	}
 	ms := goat.NewMeasurementSpec()
-	ms.ApiKey(c.MsmClient.apiKey)
-	ms.Verbose(c.MsmClient.Verbose)
+	ms.ApiKey(c.apiKey)
+	ms.Verbose(c.Verbose)
 	if err := ms.Stop(uint(id)); err != nil {
 		return fmt.Errorf("Stop(%d): %w", id, err)
 	}
@@ -139,8 +144,8 @@ func (c *ApplyClient) AddParticipants(ctx context.Context, id uint64, probeIDs [
 		return err
 	}
 	ms := goat.NewMeasurementSpec()
-	ms.ApiKey(c.MsmClient.apiKey)
-	ms.Verbose(c.MsmClient.Verbose)
+	ms.ApiKey(c.apiKey)
+	ms.Verbose(c.Verbose)
 	list := make([]uint, len(probeIDs))
 	for i, pid := range probeIDs {
 		list[i] = uint(pid)
@@ -163,8 +168,8 @@ func (c *ApplyClient) RemoveParticipants(ctx context.Context, id uint64, probeID
 		return err
 	}
 	ms := goat.NewMeasurementSpec()
-	ms.ApiKey(c.MsmClient.apiKey)
-	ms.Verbose(c.MsmClient.Verbose)
+	ms.ApiKey(c.apiKey)
+	ms.Verbose(c.Verbose)
 	list := make([]uint, len(probeIDs))
 	for i, pid := range probeIDs {
 		list[i] = uint(pid)

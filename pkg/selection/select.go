@@ -164,7 +164,8 @@ func Select(
 		}
 
 		// cohortExcluded = inter-cohort excluded ∪ cohort.ExcludeProbeIDs.
-		cohortExcluded := make(map[uint32]struct{}, len(interCohortExcluded)+len(cohort.ExcludeProbeIDs))
+		cohortExcluded := make(map[uint32]struct{},
+			len(interCohortExcluded)+len(cohort.ExcludeProbeIDs))
 		for id := range interCohortExcluded {
 			cohortExcluded[id] = struct{}{}
 		}
@@ -264,8 +265,8 @@ type candidate struct {
 	probe snapshot.Probe
 	band  Band
 	hash  uint64
-	cell  h3.Cell // unused by orderer; reserved for future use
-	coef  float64 // unused by orderer; reserved for future use
+	// cell  h3.Cell // unused by orderer; reserved for future use
+	// coef  float64 // unused by orderer; reserved for future use
 }
 
 // cellCapacity returns the maximum number of probes allowed in a cell for one
