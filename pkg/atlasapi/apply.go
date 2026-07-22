@@ -75,7 +75,10 @@ func (c *ApplyClient) CreateMeasurement(ctx context.Context, spec plan.MsmSpec) 
 	ms.Verbose(c.Verbose)
 
 	desc := c.TagCodec.Format(spec.Key.Name, spec.Key.Cohort)
-	baseOpts := &goat.BaseOptions{Interval: uint(spec.Interval)}
+	baseOpts := &goat.BaseOptions{
+		Interval: uint(spec.Interval),
+		Tags:     []string{c.TagCodec.Prefix()},
+	}
 	af := uint(spec.AF)
 
 	var defErr error

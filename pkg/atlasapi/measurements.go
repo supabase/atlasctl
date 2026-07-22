@@ -48,9 +48,9 @@ func (c *MsmClient) GetMeasurement(ctx context.Context, id uint64) (plan.MsmInfo
 // API quirk: limit=0 exits after the first result. Always set to ^uint(0).
 func (c *MsmClient) ListMyMeasurements(ctx context.Context) ([]plan.MsmInfo, error) {
 	filter := goat.NewMeasurementFilter()
+	filter.FilterTags([]string{c.TagCodec.Prefix()})
 	filter.FilterMy()
 	filter.FilterStatus(goat.MeasurementStatusOngoing)
-	filter.FilterDescriptionHas(c.TagCodec.Prefix())
 	filter.ApiKey(c.apiKey)
 	filter.Verbose(c.Verbose)
 	filter.Limit(^uint(0))
