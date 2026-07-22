@@ -2,19 +2,23 @@
 
 Declarative management of RIPE Atlas measurements for Supabase external edge telemetry.
 
-atlasctl applies the same workflow as Terraform or Pulumi to RIPE Atlas: write a config file describing the desired state, review a plan showing what will change, then apply the minimal set of operations. It selects probes, manages measurement lifecycles, detects drift, and maintains a state file mapping config identities to live measurement IDs.
-
 ## Background
 
-[RIPE Atlas](https://atlas.ripe.net) is a global network of roughly 12,000 hardware probes distributed across ISPs worldwide. Each probe runs active measurements (DNS, ping, TLS, traceroute) and reports results in real time. Supabase uses RIPE Atlas to detect failures that are invisible from our own infrastructure: DNS resolution problems at specific ISPs, TCP/TLS reachability issues from particular networks, and regional outages that Supabase's internal monitoring cannot see.
+[RIPE Atlas](https://atlas.ripe.net) is a global network of roughly 12,000 to 14,000 hardware probes distributed across ISPs worldwide. Each probe runs active measurements (DNS, ping, TLS, traceroute) and reports results in real time. Supabase uses RIPE Atlas to detect failures invisible from our own infrastructure: DNS resolution problems at specific ISPs, TCP/TLS reachability issues from particular networks, and regional outages that internal monitoring cannot see.
 
-The challenge is operational. RIPE Atlas measurements are created individually, probe sets drift as probes connect and disconnect, and tracking which measurement IDs belong to which logical target requires bookkeeping. atlasctl handles all of that. The operator writes a config file and runs four commands. The tool does the rest.
+The operational challenge starts with probe selection. If you want a measurement with 50 to 200 probes, you have thousands of candidates. Picking them naively, or accepting whatever the API returns, tends to produce sets that cluster in Western Europe and North America, repeat the same ASNs, and include probes that go offline regularly. A useful measurement needs geographic spread across continental zones, ASN diversity so no single carrier dominates, and probes with a track record of stability.
+
+atlasctl addresses this with a scoring-based autoselection algorithm. Every probe starts with a base score and you add weighted criteria on top: preferred ASNs, stability tags, country bonuses. The selection loop interleaves probes across six continental zones before filling slots, and a per-cell H3 geographic cap prevents any single city from consuming a disproportionate share of the cohort. You steer the algorithm through config. The default behavior, with no scoring config at all, still produces a geographically diverse set.
+
+Beyond selection, atlasctl wraps the full RIPE Atlas measurement lifecycle with a Terraform-style workflow: a config file describing desired state, a plan step that shows what will change and what it will cost in credits, and an apply step that executes only the minimal set of API operations. A state file tracks which measurement IDs belong to which logical targets, and drift detection flags when the live API diverges from recorded state.
 
 ## Cohorts
 
-A cohort is a named probe tier within a measurement. Each (measurement, cohort) pair becomes one RIPE Atlas measurement with its own permanent ID. This pairing is the core resource identity throughout the workflow, config, state file, and drift detection.
+A cohort is a named probe tier within a measurement. A single logical measurement can have multiple cohorts, each running at a different frequency or targeting a different slice of the probe pool. For example, a `high-freq` cohort might run 30 probes every 60 seconds for tight alerting, while a `low-freq` cohort runs 100 probes every 15 minutes for broad coverage at lower credit cost.
 
-Cohorts within a measurement are filled in definition order. A probe selected for an earlier cohort is excluded from later cohorts within the same measurement. Different measurements select from the full probe pool independently, so the same physical probe can appear in cohorts across separate measurements.
+Each cohort is filled in definition order using its own scoring config. The first cohort gets the highest-scoring available probes. Later cohorts draw from whatever remains after earlier cohorts have claimed their probes. This means you can concentrate certain network paths or stability characteristics at the top tier and broaden coverage at lower tiers, without any probe appearing twice in the same measurement.
+
+Each (measurement, cohort) pair becomes one RIPE Atlas measurement with its own permanent ID. This pair is the core resource identity throughout the workflow, config, state file, and drift detection. Different measurements select from the full probe pool independently, so the same physical probe can appear in cohorts across separate measurements.
 
 ## Workflow
 
@@ -47,7 +51,7 @@ Cohorts within a measurement are filled in definition order. A probe selected fo
    state.yaml (measurement IDs) ---> downstream consumers
 ```
 
-`select` and `plan` are read-only. Only `apply` touches the RIPE Atlas API in a way that costs credits or modifies live measurements.
+`select` and `plan` are read-only. `select` runs probe selection and stops. `plan` runs the same selection and continues to diff against state and the live API. Only `apply` touches the RIPE Atlas API in a way that costs credits or modifies live measurements.
 
 ## Subcommands
 
@@ -67,7 +71,7 @@ Previous snapshot was 6 days old.
 
 ### select
 
-Runs the probe selection algorithm against the local snapshot and prints a coverage report. Optionally writes per-cohort GeoJSON files for visual review in geojson.io or kepler.gl.
+Runs the probe selection algorithm against the local snapshot and prints a coverage summary per cohort. Use it while iterating on scoring weights, probe counts, or H3 cell caps to preview what the selection would look like before running a full plan.
 
 ```
 $ atlasctl select
@@ -78,11 +82,11 @@ Cohort low-freq:  100 probes across 71 H3 cells, 38 ASNs, 18 countries
 Total: 190 unique probes
 ```
 
-`select` makes no API calls. It is cheap to run repeatedly while iterating on scoring weights or city density overrides.
+`select` is a subset of what `plan` does. It runs the same probe selection algorithm and stops there. `plan` takes those same probe lists and continues to diff them against the state file and the live API. `select` makes no API calls and has no dependencies beyond the local snapshot, so it is cheap to run repeatedly.
 
 ### plan
 
-Compares the desired state (config measurements with selected probes) against the current state (state file plus live RIPE Atlas API). Prints a human-readable diff and flags drift. Does not mutate anything.
+Runs probe selection (the same algorithm as `select`), then compares the resulting desired state against the state file and the live RIPE Atlas API. Prints a human-readable diff and flags drift. Does not mutate anything.
 
 ```
 $ atlasctl plan
@@ -412,17 +416,17 @@ Additional permissions may be required as provider capabilities expand.
 
 ```bash
 # Build the binary.
-go build -o atlasctl ./cmd/atlasctl
+make build
 
 # Fetch the probe snapshot (run weekly or on demand).
-atlasctl refresh --snapshot probes/snapshot.json
+./atlasctl refresh --snapshot probes/snapshot.json
 
 # Review the probe selection against your config.
-atlasctl select --config atlasctl.yaml --snapshot probes/snapshot.json
+./atlasctl select --config atlasctl.yaml --snapshot probes/snapshot.json
 
 # See what would change (no API mutations).
-atlasctl plan --config atlasctl.yaml --snapshot probes/snapshot.json --state state.yaml
+./atlasctl plan --config atlasctl.yaml --snapshot probes/snapshot.json --state state.yaml
 
 # Apply the changes.
-atlasctl apply --config atlasctl.yaml --snapshot probes/snapshot.json --state state.yaml --yes
+./atlasctl apply --config atlasctl.yaml --snapshot probes/snapshot.json --state state.yaml --yes
 ```
