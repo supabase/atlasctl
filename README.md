@@ -369,6 +369,17 @@ The authors use atlasctl together with [atlas_exporter](https://github.com/czerw
 
 In addition to managed measurements, RIPE Atlas has thousands of ongoing public measurements created by researchers and network operators. These can be consumed at no credit cost and are useful for incident correlation. If a managed canary fails from AT&T probes at the same time a public google.com measurement fails from the same probes, the failure is almost certainly network-level.
 
+## Terraform and Pulumi providers
+
+If your infrastructure is already managed with Terraform or Pulumi, atlasctl is a good way to get started. Use it interactively to work out your probe selection parameters, scoring config, and cohort structure. The `select` command gives fast feedback while you tune weights and counts, and `plan` shows exactly what the API would see before you commit to anything.
+
+Once the config is stable, the same concepts map directly into declarative infrastructure code. Everything expressible in `atlasctl.yaml` can be expressed in HCL or Pulumi code and tracked in your existing state:
+
+- [supabase/terraform-provider-ripe-atlas](https://github.com/supabase/terraform-provider-ripe-atlas)
+- [supabase/pulumi-atlas](https://github.com/supabase/pulumi-atlas)
+
+The providers use the same namespace, cohort, and probe selection model. Measurements created through either provider carry the same description tag format and are visible to drift detection in atlasctl if you share a namespace.
+
 ## Constraints
 
 - No HTTP measurements. RIPE Atlas supports ping, DNS, TLS, traceroute, and NTP only.
