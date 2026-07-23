@@ -14,7 +14,7 @@ Terms used throughout atlasctl documentation, CLI output, config files, and stat
 
 **credit** — RIPE Atlas platform currency consumed per measurement result. Costs: DNS and TLS 10 per result, ping 3, traceroute 30. One-off measurements cost 2x the periodic rate.
 
-**description tag** — a structured string embedded in each RIPE Atlas measurement description by atlasctl (`[atlasctl:<name>:<cohort>]`). Marks a measurement as managed and allows recovery if state.yaml is lost. The prefix is configurable via `tag_prefix` in config.
+**description tag** — a structured string embedded in each RIPE Atlas measurement description by atlasctl (`[atlasctl:<name>:<cohort>]`). Marks a measurement as managed and allows recovery if state.yaml is lost. The namespace is configurable via `namespace` in config.
 
 **drift** — discrepancy between state.yaml and the live RIPE Atlas API. Two kinds: orphan (a live tagged measurement absent from state) and ghost (a state record whose measurement ID is no longer live). Reported as warnings by `plan`.
 

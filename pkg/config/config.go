@@ -16,7 +16,7 @@ import (
 type Config struct {
 	Snapshot      string               `yaml:"snapshot"`
 	State         string               `yaml:"state"`
-	TagPrefix     string               `yaml:"tag_prefix"`
+	Namespace     string               `yaml:"namespace"`
 	CohortConfigs map[string]CohortCfg `yaml:"cohort_configs"`
 	Measurements  []Measurement        `yaml:"measurements"`
 	ExcludeTags   []string             `yaml:"exclude_tags"`
@@ -30,7 +30,7 @@ type Config struct {
 // Cities covers both scoring bonuses (Score field) and H3 density coefficients
 // (DensityCoefficient field). Both are per-cohort preferences.
 type CohortCfg struct {
-	ScoringConfig                   `yaml:",inline"`
+	ScoringConfig             `yaml:",inline"`
 	Cities                    []CityConfig `yaml:"cities"`
 	DisableContinentalShuffle bool         `yaml:"disable_continental_shuffle"`
 }
@@ -74,7 +74,7 @@ type Measurement struct {
 	Name      string              `yaml:"name"`
 	Type      MeasurementType     `yaml:"type"`
 	Target    string              `yaml:"target"`
-	AF        int                 `yaml:"af"` // address family: 4 or 6, default 4
+	AF        int                 `yaml:"af"`         // address family: 4 or 6, default 4
 	QueryType string              `yaml:"query_type"` // DNS only: A, AAAA, NS, MX, ...
 	Cohorts   []MeasurementCohort `yaml:"cohorts"`
 }
@@ -144,9 +144,6 @@ func Load(path string) (*Config, error) {
 }
 
 func (c *Config) applyDefaults() {
-	if c.TagPrefix == "" {
-		c.TagPrefix = "[atlasctl:"
-	}
 	if c.GeoDiversity.H3Resolution == 0 {
 		c.GeoDiversity.H3Resolution = 3
 	}
@@ -183,7 +180,8 @@ func (c *Config) validate() error {
 
 	// Validate named cohort config presets.
 	for name, cfg := range c.CohortConfigs {
-		errs = append(errs, validateCities(cfg.Cities, fmt.Sprintf("cohort_configs[%q]", name))...)
+		errs = append(errs, validateCities(cfg.Cities,
+			fmt.Sprintf("cohort_configs[%q]", name))...)
 	}
 
 	msmNames := make(map[string]bool, len(c.Measurements))
@@ -232,7 +230,8 @@ func (c *Config) validate() error {
 					errs = append(errs, fmt.Errorf("measurement %q cohort %q: unknown cfg_preset %q", m.Name, cohort.Name, cohort.CfgPreset))
 				}
 			}
-			errs = append(errs, validateCities(cohort.Cfg.Cities, fmt.Sprintf("measurement %q cohort %q", m.Name, cohort.Name))...)
+			errs = append(errs, validateCities(cohort.Cfg.Cities,
+				fmt.Sprintf("measurement %q cohort %q", m.Name, cohort.Name))...)
 		}
 	}
 
