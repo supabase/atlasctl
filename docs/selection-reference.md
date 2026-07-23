@@ -12,7 +12,7 @@ For a conceptual walkthrough of how bands, cohorts, and continental coverage int
 |---|---|---|---|
 | `snapshot` | string | | Path to the probe snapshot file written by `atlasctl refresh` |
 | `state` | string | | Path to the state file read and written by `plan` and `apply` |
-| `tag_prefix` | string | `[atlasctl:` | Prefix embedded in RIPE Atlas measurement descriptions for drift detection |
+| `namespace` | string | `atlasctl` | Namespace embedded in RIPE Atlas measurement descriptions and tags. Used to scope managed measurements and filter by ownership during drift detection |
 | `cohort_configs` | map | | Named `CohortCfg` presets for reuse across cohorts. Referenced via `cfg_preset` |
 | `measurements` | list | | The measurements atlasctl will manage |
 | `exclude_tags` | list of string | | Probes carrying any of these tags are excluded from all measurements |
