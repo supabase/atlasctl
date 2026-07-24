@@ -15,6 +15,11 @@ import (
 	"github.com/supabase/atlasctl/pkg/snapshot"
 )
 
+// Compile-time assertion: snapshot.ProbeSource is satisfied by our fakes.
+var _ snapshot.ProbeSource = (*snapshot.FakeProbeSource)(nil)
+var _ snapshot.ProbeSource = (*snapshot.FileProbeSource)(nil)
+var _ snapshot.ProbeSource = (*snapshot.CachedProbeSource)(nil)
+
 // testAPIKey is a valid UUID used as a fake API key in tests that require one.
 const testAPIKey = "00000000-0000-0000-0000-000000000001"
 
@@ -33,10 +38,15 @@ measurements:
 
 // testDeps returns a Deps wired with the provided clients. Unused factories
 // return harmless fakes so tests only need to supply what they actually use.
+// NewProbeSource uses FileProbeSource so tests can control the snapshot file
+// directly without TTL or API-call logic getting in the way.
 func testDeps(msmClient plan.MsmClient, applyClient plan.ApplyClient) Deps {
 	return Deps{
 		NewSnapshotClient: func(string, bool) snapshot.Client {
 			return &snapshot.FakeClient{}
+		},
+		NewProbeSource: func(path string, _ snapshot.Client, _ time.Duration, _ bool) snapshot.ProbeSource {
+			return &snapshot.FileProbeSource{Path: path}
 		},
 		NewMsmClient: func(string, bool, plan.TagCodec) (plan.MsmClient, error) {
 			return msmClient, nil
@@ -129,6 +139,7 @@ func TestApply_DryRunFlag(t *testing.T) {
 	// so it satisfies plan.MsmClient.
 	deps := Deps{
 		NewSnapshotClient: func(string, bool) snapshot.Client { return &snapshot.FakeClient{} },
+		NewProbeSource:    func(path string, _ snapshot.Client, _ time.Duration, _ bool) snapshot.ProbeSource { return &snapshot.FileProbeSource{Path: path} },
 		NewMsmClient:      func(string, bool, plan.TagCodec) (plan.MsmClient, error) { return fakeApply, nil },
 		NewApplyClient:    func(string, bool, plan.TagCodec) (plan.ApplyClient, error) { return fakeApply, nil },
 	}
@@ -200,6 +211,7 @@ func TestApply_EmptyMeasurements_StopsAll(t *testing.T) {
 	fakeApply := &plan.FakeApplyClient{}
 	deps := Deps{
 		NewSnapshotClient: func(string, bool) snapshot.Client { return &snapshot.FakeClient{} },
+		NewProbeSource:    func(path string, _ snapshot.Client, _ time.Duration, _ bool) snapshot.ProbeSource { return &snapshot.FileProbeSource{Path: path} },
 		NewMsmClient:      func(string, bool, plan.TagCodec) (plan.MsmClient, error) { return fakeApply, nil },
 		NewApplyClient:    func(string, bool, plan.TagCodec) (plan.ApplyClient, error) { return fakeApply, nil },
 	}

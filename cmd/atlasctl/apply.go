@@ -10,7 +10,6 @@ import (
 
 	"github.com/supabase/atlasctl/pkg/config"
 	"github.com/supabase/atlasctl/pkg/plan"
-	"github.com/supabase/atlasctl/pkg/snapshot"
 )
 
 func newApplyCmd(f *globalFlags, deps Deps) *cobra.Command {
@@ -28,7 +27,15 @@ func newApplyCmd(f *globalFlags, deps Deps) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			snap, err := snapshot.Load(f.SnapshotFile)
+
+			apiKey, err := resolveAPIKey(f.APIKey)
+			if err != nil {
+				return err
+			}
+
+			snapshotClient := deps.NewSnapshotClient(apiKey, f.Verbose)
+			src := deps.NewProbeSource(f.SnapshotFile, snapshotClient, 0, false)
+			probeList, err := src.Probes(ctx)
 			if err != nil {
 				return err
 			}
@@ -41,16 +48,12 @@ func newApplyCmd(f *globalFlags, deps Deps) *cobra.Command {
 				state = plan.NewStateFile()
 			}
 
-			allSelected, err := selectAll(ctx, snap, *cfg)
+			allSelected, err := selectAll(ctx, probeList, *cfg)
 			if err != nil {
 				return err
 			}
 			desired := plan.DesiredState(*cfg, allSelected)
 
-			apiKey, err := resolveAPIKey(f.APIKey)
-			if err != nil {
-				return err
-			}
 			applyClient, err := deps.NewApplyClient(apiKey, f.Verbose, plan.NewTagCodec(cfg.Namespace))
 			if err != nil {
 				return err

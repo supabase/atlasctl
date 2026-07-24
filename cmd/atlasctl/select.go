@@ -11,7 +11,7 @@ import (
 	"github.com/supabase/atlasctl/pkg/snapshot"
 )
 
-func newSelectCmd(f *globalFlags, _ Deps) *cobra.Command {
+func newSelectCmd(f *globalFlags, deps Deps) *cobra.Command {
 	var format string
 	var geojsonLink bool
 
@@ -26,12 +26,20 @@ func newSelectCmd(f *globalFlags, _ Deps) *cobra.Command {
 				return err
 			}
 
-			snap, err := snapshot.Load(f.SnapshotFile)
+			// API key is optional for select: if present, enables transparent
+			// cache refresh; if absent, the existing on-disk snapshot is used.
+			apiKey := resolveAPIKeyOptional(f.APIKey)
+			var client snapshot.Client
+			if apiKey != "" {
+				client = deps.NewSnapshotClient(apiKey, f.Verbose)
+			}
+			src := deps.NewProbeSource(f.SnapshotFile, client, 0, client == nil)
+			probeList, err := src.Probes(ctx)
 			if err != nil {
 				return err
 			}
 
-			allSelected, err := selectAll(ctx, snap, *cfg)
+			allSelected, err := selectAll(ctx, probeList, *cfg)
 			if err != nil {
 				return err
 			}
