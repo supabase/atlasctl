@@ -64,12 +64,19 @@ func initLogger(cmd *cobra.Command, level string) error {
 // RIPE_ATLAS_API_KEY environment variable. Returns an error if neither is set.
 // UUID format validation is deferred to the client constructors.
 func resolveAPIKey(flagVal string) (string, error) {
-	s := flagVal
-	if s == "" {
-		s = os.Getenv("RIPE_ATLAS_API_KEY")
-	}
+	s := resolveAPIKeyOptional(flagVal)
 	if s == "" {
 		return "", errors.New("RIPE Atlas API key required: use --api-key or set RIPE_ATLAS_API_KEY")
 	}
 	return s, nil
+}
+
+// resolveAPIKeyOptional returns the API key from the flag value or
+// RIPE_ATLAS_API_KEY, or an empty string if neither is set. Use this for
+// commands where the key is optional (e.g. select, when the cache is fresh).
+func resolveAPIKeyOptional(flagVal string) string {
+	if flagVal != "" {
+		return flagVal
+	}
+	return os.Getenv("RIPE_ATLAS_API_KEY")
 }

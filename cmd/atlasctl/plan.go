@@ -12,13 +12,13 @@ import (
 	"github.com/supabase/atlasctl/pkg/snapshot"
 )
 
-// selectAll builds a filtered probe pool from snap and runs per-measurement
-// selection, returning results keyed by measurement name. The orderer is
-// shared across all measurements so that cohorts with identical CohortCfg
-// benefit from the in-memory ordering cache.
-func selectAll(ctx context.Context, snap snapshot.Snapshot, cfg config.Config) (map[string][]selection.SelectedCohort, error) {
-	probes := selection.NewProbes(len(snap.Probes))
-	for _, p := range snap.Probes {
+// selectAll builds a filtered probe pool and runs per-measurement selection,
+// returning results keyed by measurement name. The orderer is shared across
+// all measurements so that cohorts with identical CohortCfg benefit from the
+// in-memory ordering cache.
+func selectAll(ctx context.Context, probeList []snapshot.Probe, cfg config.Config) (map[string][]selection.SelectedCohort, error) {
+	probes := selection.NewProbes(len(probeList))
+	for _, p := range probeList {
 		if !selection.HardExcluded(p, cfg.ExcludeTags) {
 			probes.Append(p)
 		}
@@ -51,7 +51,15 @@ func newPlanCmd(f *globalFlags, deps Deps) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			snap, err := snapshot.Load(f.SnapshotFile)
+
+			apiKey, err := resolveAPIKey(f.APIKey)
+			if err != nil {
+				return err
+			}
+
+			snapshotClient := deps.NewSnapshotClient(apiKey, f.Verbose)
+			src := deps.NewProbeSource(f.SnapshotFile, snapshotClient, 0, false)
+			probeList, err := src.Probes(ctx)
 			if err != nil {
 				return err
 			}
@@ -64,16 +72,12 @@ func newPlanCmd(f *globalFlags, deps Deps) *cobra.Command {
 				state = plan.NewStateFile()
 			}
 
-			allSelected, err := selectAll(ctx, snap, *cfg)
+			allSelected, err := selectAll(ctx, probeList, *cfg)
 			if err != nil {
 				return err
 			}
 			desired := plan.DesiredState(*cfg, allSelected)
 
-			apiKey, err := resolveAPIKey(f.APIKey)
-			if err != nil {
-				return err
-			}
 			msmClient, err := deps.NewMsmClient(apiKey, f.Verbose, plan.NewTagCodec(cfg.Namespace))
 			if err != nil {
 				return err
