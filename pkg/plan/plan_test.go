@@ -282,6 +282,76 @@ func TestDiff_StructuralChange_TargetChanged(t *testing.T) {
 	assert.Equal(t, "new.supabase.co", c.Desired.Target)
 }
 
+func TestDiff_NamespaceChange(t *testing.T) {
+	// Namespace stored in state differs from desired — must trigger stop+create.
+	key := plan.MsmKey{Name: "dns-canary", Cohort: "high-freq"}
+	desired := map[plan.MsmKey]plan.MsmSpec{
+		key: {
+			Namespace: "new-ns",
+			Target:    "canary.supabase.co",
+			Type:      plan.MsmTypeDNS,
+			Interval:  60,
+			ProbeIDs:  []uint32{1, 2},
+		},
+	}
+	state := sampleState(struct {
+		name, cohort string
+		rec          plan.MsmRecord
+	}{"dns-canary", "high-freq", plan.MsmRecord{
+		MsmID:     12345678,
+		Namespace: "old-ns",
+		Target:    "canary.supabase.co",
+		Type:      "dns",
+		Interval:  60,
+		ProbeIDs:  []uint32{1, 2},
+	}})
+
+	cs := plan.Diff(desired, state)
+
+	stop := findChange(t, cs, key, plan.ChangeStop)
+	assert.Equal(t, uint64(12345678), stop.MsmID)
+
+	create := findChange(t, cs, key, plan.ChangeCreate)
+	require.NotNil(t, create.Desired)
+	assert.Equal(t, "new-ns", create.Desired.Namespace)
+
+	assert.Empty(t, findChanges(cs, key, plan.ChangeAddProbes))
+	assert.Empty(t, findChanges(cs, key, plan.ChangeRemoveProbes))
+}
+
+func TestDiff_NamespaceMissing_NoStaticChange(t *testing.T) {
+	// State has no stored namespace (old state file) — isStructuralChange must
+	// not fire for a namespace mismatch; the check is deferred to LiveDiff.
+	key := plan.MsmKey{Name: "dns-canary", Cohort: "high-freq"}
+	desired := map[plan.MsmKey]plan.MsmSpec{
+		key: {
+			Namespace: "atlasctl",
+			Target:    "canary.supabase.co",
+			Type:      plan.MsmTypeDNS,
+			Interval:  60,
+			ProbeIDs:  []uint32{1, 2},
+		},
+	}
+	state := sampleState(struct {
+		name, cohort string
+		rec          plan.MsmRecord
+	}{"dns-canary", "high-freq", plan.MsmRecord{
+		MsmID:  12345678,
+		Target: "canary.supabase.co",
+		Type:   "dns",
+		// Namespace intentionally empty — old state.
+		Interval: 60,
+		ProbeIDs: []uint32{1, 2},
+	}})
+
+	cs := plan.Diff(desired, state)
+
+	// No structural change from the static diff — should be a noop.
+	findChange(t, cs, key, plan.ChangeNoOp)
+	assert.Empty(t, findChanges(cs, key, plan.ChangeStop))
+	assert.Empty(t, findChanges(cs, key, plan.ChangeCreate))
+}
+
 func TestDiff_MultipleEntries(t *testing.T) {
 	k1 := plan.MsmKey{Name: "dns-canary", Cohort: "high-freq"}
 	k2 := plan.MsmKey{Name: "tls-canary", Cohort: "high-freq"}
@@ -360,21 +430,24 @@ func TestDesiredState(t *testing.T) {
 		},
 	}
 
-	desired := plan.DesiredState(cfg, allSelected)
+	desired := plan.DesiredState(cfg, allSelected, "atlasctl")
 
 	require.Len(t, desired, 3) // dns-canary/high-freq, dns-canary/low-freq, ping-edge/low-freq
 
 	d := desired[plan.MsmKey{Name: "dns-canary", Cohort: "high-freq"}]
+	assert.Equal(t, "atlasctl", d.Namespace)
 	assert.Equal(t, "canary.supabase.co", d.Target)
 	assert.Equal(t, plan.MsmTypeDNS, d.Type)
 	assert.Equal(t, 60, d.Interval)
 	assert.ElementsMatch(t, []uint32{10, 20}, d.ProbeIDs)
 
 	d = desired[plan.MsmKey{Name: "dns-canary", Cohort: "low-freq"}]
+	assert.Equal(t, "atlasctl", d.Namespace)
 	assert.Equal(t, 900, d.Interval)
 	assert.ElementsMatch(t, []uint32{30, 40, 50}, d.ProbeIDs)
 
 	d = desired[plan.MsmKey{Name: "ping-edge", Cohort: "low-freq"}]
+	assert.Equal(t, "atlasctl", d.Namespace)
 	assert.Equal(t, "1.2.3.4", d.Target)
 	assert.Equal(t, plan.MsmTypePing, d.Type)
 	assert.Equal(t, 900, d.Interval)

@@ -52,14 +52,15 @@ func newApplyCmd(f *globalFlags, deps Deps) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			desired := plan.DesiredState(*cfg, allSelected)
+			codec := plan.NewTagCodec(cfg.Namespace)
+			desired := plan.DesiredState(*cfg, allSelected, codec.Namespace())
 
-			applyClient, err := deps.NewApplyClient(apiKey, f.Verbose, plan.NewTagCodec(cfg.Namespace))
+			applyClient, err := deps.NewApplyClient(apiKey, f.Verbose, codec)
 			if err != nil {
 				return err
 			}
 
-			cs, warnings, err := plan.LiveDiff(ctx, desired, state, applyClient)
+			cs, warnings, err := plan.LiveDiff(ctx, desired, state, applyClient, codec)
 			if err != nil {
 				return err
 			}

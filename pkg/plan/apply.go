@@ -11,12 +11,13 @@ import (
 
 // MsmSpec carries the information needed to create one RIPE Atlas measurement.
 type MsmSpec struct {
-	Key      MsmKey
-	Target   string
-	Type     MsmType
-	AF       int // address family: 4 or 6
-	Interval int
-	ProbeIDs []uint32
+	Key       MsmKey
+	Namespace string // effective namespace (after TagCodec defaulting) at desired-state build time
+	Target    string
+	Type      MsmType
+	AF        int // address family: 4 or 6
+	Interval  int
+	ProbeIDs  []uint32
 }
 
 // ApplyClient extends MsmClient with the mutating operations needed by Apply.
@@ -97,12 +98,13 @@ func Apply(
 				Str("cohort", ch.Key.Cohort).
 				Msg("created measurement")
 			out.SetRecord(ch.Key.Name, ch.Key.Cohort, MsmRecord{
-				MsmID:    id,
-				Target:   ch.Desired.Target,
-				Type:     string(ch.Desired.Type),
-				AF:       ch.Desired.AF,
-				Interval: ch.Desired.Interval,
-				ProbeIDs: ch.Desired.ProbeIDs,
+				MsmID:     id,
+				Namespace: ch.Desired.Namespace,
+				Target:    ch.Desired.Target,
+				Type:      string(ch.Desired.Type),
+				AF:        ch.Desired.AF,
+				Interval:  ch.Desired.Interval,
+				ProbeIDs:  ch.Desired.ProbeIDs,
 			})
 
 		case ChangeStop:
@@ -210,12 +212,13 @@ func cloneState(sf StateFile) StateFile {
 	for name, cohorts := range sf.Measurements {
 		for cohort, rec := range cohorts {
 			cloned := MsmRecord{
-				MsmID:    rec.MsmID,
-				Target:   rec.Target,
-				Type:     rec.Type,
-				AF:       rec.AF,
-				Interval: rec.Interval,
-				ProbeIDs: append([]uint32(nil), rec.ProbeIDs...),
+				MsmID:     rec.MsmID,
+				Namespace: rec.Namespace,
+				Target:    rec.Target,
+				Type:      rec.Type,
+				AF:        rec.AF,
+				Interval:  rec.Interval,
+				ProbeIDs:  append([]uint32(nil), rec.ProbeIDs...),
 			}
 			out.SetRecord(name, cohort, cloned)
 		}

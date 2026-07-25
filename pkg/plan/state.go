@@ -29,12 +29,13 @@ type StateFile struct {
 // MsmRecord holds the live attributes of one RIPE Atlas measurement that are
 // needed to detect drift and compute diffs.
 type MsmRecord struct {
-	MsmID    uint64   `yaml:"msm_id"`
-	Target   string   `yaml:"target"`
-	Type     string   `yaml:"type"`
-	AF       int      `yaml:"af"`
-	Interval int      `yaml:"interval"`
-	ProbeIDs []uint32 `yaml:"probe_ids"`
+	MsmID     uint64   `yaml:"msm_id"`
+	Namespace string   `yaml:"namespace,omitempty"` // empty on records written before namespace tracking was added
+	Target    string   `yaml:"target"`
+	Type      string   `yaml:"type"`
+	AF        int      `yaml:"af"`
+	Interval  int      `yaml:"interval"`
+	ProbeIDs  []uint32 `yaml:"probe_ids"`
 }
 
 // NewStateFile returns an empty, initialised StateFile.
