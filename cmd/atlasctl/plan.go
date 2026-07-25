@@ -76,14 +76,15 @@ func newPlanCmd(f *globalFlags, deps Deps) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			desired := plan.DesiredState(*cfg, allSelected)
+			codec := plan.NewTagCodec(cfg.Namespace)
+			desired := plan.DesiredState(*cfg, allSelected, codec.Namespace())
 
-			msmClient, err := deps.NewMsmClient(apiKey, f.Verbose, plan.NewTagCodec(cfg.Namespace))
+			msmClient, err := deps.NewMsmClient(apiKey, f.Verbose, codec)
 			if err != nil {
 				return err
 			}
 
-			cs, warnings, err := plan.LiveDiff(ctx, desired, state, msmClient)
+			cs, warnings, err := plan.LiveDiff(ctx, desired, state, msmClient, codec)
 			if err != nil {
 				return err
 			}

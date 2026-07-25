@@ -45,9 +45,10 @@ type Changeset []Change
 
 // DesiredState builds the desired measurement map from per-measurement
 // selection results. selected maps measurement name to its ordered cohort
-// selection output. Keys are (measurement name, cohort name); values
-// describe the fully-resolved target state including probe IDs.
-func DesiredState(cfg config.Config, selected map[string][]selection.SelectedCohort) map[MsmKey]MsmSpec {
+// selection output. namespace is the effective namespace string (after
+// TagCodec defaulting) and is embedded in every MsmSpec so isStructuralChange
+// can detect namespace changes.
+func DesiredState(cfg config.Config, selected map[string][]selection.SelectedCohort, namespace string) map[MsmKey]MsmSpec {
 	desired := make(map[MsmKey]MsmSpec)
 	for _, msm := range cfg.Measurements {
 		cohorts, ok := selected[msm.Name]
@@ -61,12 +62,13 @@ func DesiredState(cfg config.Config, selected map[string][]selection.SelectedCoh
 				ids[i] = p.ID
 			}
 			desired[key] = MsmSpec{
-				Key:      key,
-				Target:   msm.Target,
-				Type:     MsmType(msm.Type),
-				AF:       msm.AF,
-				Interval: sc.Cohort.IntervalSeconds,
-				ProbeIDs: ids,
+				Key:       key,
+				Namespace: namespace,
+				Target:    msm.Target,
+				Type:      MsmType(msm.Type),
+				AF:        msm.AF,
+				Interval:  sc.Cohort.IntervalSeconds,
+				ProbeIDs:  ids,
 			}
 		}
 	}
@@ -133,7 +135,15 @@ func Diff(desired map[MsmKey]MsmSpec, state StateFile) Changeset {
 
 // isStructuralChange reports whether any immutable attribute has changed between
 // the recorded state and the desired state.
+//
+// Namespace is only compared when rec.Namespace is non-empty. A blank
+// rec.Namespace means the record was written before namespace tracking was
+// added — in that case the check is deferred to LiveDiff, which fetches the
+// live measurement by ID to confirm the namespace.
 func isStructuralChange(rec MsmRecord, want MsmSpec) bool {
+	if rec.Namespace != "" && rec.Namespace != want.Namespace {
+		return true
+	}
 	return rec.Target != want.Target ||
 		MsmType(rec.Type) != want.Type ||
 		rec.AF != want.AF ||
