@@ -68,15 +68,24 @@ type DriftWarning struct {
 // LiveDiff extends the static Diff with a live API check for drift.
 //
 // It:
-//  1. Computes the base Changeset via Diff(desired, state).
-//  2. Calls client.ListMyMeasurements to discover all ongoing tagged measurements.
-//  3. Flags orphans — tagged live measurements whose key is absent from state.
-//  4. For each state entry absent from the live list, calls GetMeasurement(id):
-//     - If the measurement is truly gone → ghost warning (existing behaviour).
-//     - If the measurement is alive under a different namespace → the static
-//       diff missed this because rec.Namespace was empty (old state); LiveDiff
-//       promotes the existing change to a stop+create.
-//     - If a static structural change already scheduled a stop → suppress the
+//  1. Builds an effective desired map by filling any empty Namespace field from
+//     codec.Namespace(). Callers such as the Pulumi provider manage namespace at
+//     the provider level and may not set Namespace on individual MsmSpecs; filling
+//     it in here means the static diff and any created measurements always carry
+//     the correct namespace without requiring callers to thread it through.
+//  2. Computes the base Changeset via Diff(effectiveDesired, state).
+//  3. Calls client.ListMyMeasurements to discover all ongoing tagged measurements.
+//  4. For each live measurement already running under the codec namespace:
+//     - If it is absent from state → orphan warning.
+//     - If the static diff scheduled a stop+create only because the stored
+//       namespace was empty (normalised to default, not a real structural
+//       change) → cancel the stop+create and emit a noop instead.
+//  5. For each state entry absent from the live list, calls GetMeasurement(id):
+//     - Truly gone → ghost warning.
+//     - Alive under a different namespace → promote to stop+create using the
+//       effective (codec-namespace-filled) spec so the new measurement is
+//       tagged correctly.
+//     - Static structural change already scheduled a stop → suppress the
 //       ghost warning; no duplicate stop is emitted.
 //
 // codec must match the TagCodec used to build the MsmClient so that orphan
@@ -93,12 +102,26 @@ func LiveDiff(
 		return nil, nil, err
 	}
 
+	// Build an effective desired map: for any spec with an empty Namespace,
+	// fill it in from the codec. This lets callers omit the field (e.g. the
+	// Pulumi provider, where namespace is a provider-level concern) and still
+	// have namespace changes detected by the static diff and propagated to
+	// newly created measurements.
+	effective := make(map[MsmKey]MsmSpec, len(desired))
+	for k, v := range desired {
+		if v.Namespace == "" {
+			v.Namespace = codec.Namespace()
+		}
+		effective[k] = v
+	}
+
 	// Static diff — pure, no API calls.
-	cs := Diff(desired, state)
+	cs := Diff(effective, state)
 
 	// Build a set of keys already scheduled for a stop by the static diff.
-	// Used below to suppress ghost warnings when isStructuralChange already
-	// caught a namespace change via stored rec.Namespace.
+	// Keys with only a ChangeStop (measurement removed from desired) are
+	// distinguished from keys with Stop+Create (structural change) by also
+	// checking whether the key appears in effective.
 	alreadyStopping := make(map[MsmKey]bool, len(cs))
 	for _, ch := range cs {
 		if ch.Kind == ChangeStop {
@@ -139,7 +162,8 @@ func LiveDiff(
 			continue
 		}
 		key := MsmKey{Name: name, Cohort: round}
-		if _, inState := state.GetRecord(name, round); !inState {
+		rec, inState := state.GetRecord(name, round)
+		if !inState {
 			warnings = append(warnings, DriftWarning{
 				Kind:  DriftOrphan,
 				Key:   key,
@@ -149,6 +173,22 @@ func LiveDiff(
 					info.ID, name, round,
 				),
 			})
+			continue
+		}
+
+		// The measurement is in state and running under the codec namespace.
+		// If the static diff scheduled a stop+create for this key, it may be a
+		// false positive caused by namespace normalisation: the stored namespace
+		// was empty (treated as DefaultNamespace by isStructuralChange) but the
+		// measurement was actually already running under the codec namespace.
+		// Cancel the stop+create if there are no other structural differences.
+		if alreadyStopping[key] && info.ID == rec.MsmID {
+			if spec, inEffective := effective[key]; inEffective {
+				if !nonNamespaceStructuralChange(rec, spec) {
+					cs = cancelStopCreate(cs, key, rec.MsmID)
+					delete(alreadyStopping, key)
+				}
+			}
 		}
 	}
 
@@ -223,14 +263,39 @@ func LiveDiff(
 			}
 
 			// Namespace mismatch: the measurement is alive but was created under a
-			// different namespace (old state had no stored namespace). Replace
-			// whatever the static diff produced for this key with stop+create.
-			spec := desired[key]
+			// different namespace. Use the effective spec (namespace filled from codec)
+			// so the replacement measurement is tagged with the correct namespace.
+			spec := effective[key]
 			cs = replaceWithStopCreate(cs, key, rec.MsmID, spec)
 		}
 	}
 
 	return cs, warnings, nil
+}
+
+// nonNamespaceStructuralChange reports whether rec and want differ on any
+// immutable attribute other than namespace (target, type, af, interval).
+// Used to distinguish a namespace-only false positive from a real structural change.
+func nonNamespaceStructuralChange(rec MsmRecord, want MsmSpec) bool {
+	return rec.Target != want.Target ||
+		MsmType(rec.Type) != want.Type ||
+		rec.AF != want.AF ||
+		rec.Interval != want.Interval
+}
+
+// cancelStopCreate removes the ChangeStop and ChangeCreate for key from cs and
+// replaces them with a ChangeNoOp. Used when the static diff scheduled a
+// stop+create only because of namespace normalisation but the measurement is
+// already running under the correct (codec) namespace.
+func cancelStopCreate(cs Changeset, key MsmKey, msmID uint64) Changeset {
+	out := cs[:0:0]
+	for _, ch := range cs {
+		if ch.Key != key {
+			out = append(out, ch)
+		}
+	}
+	out = append(out, Change{Kind: ChangeNoOp, Key: key, MsmID: msmID})
+	return out
 }
 
 // replaceWithStopCreate removes all existing changes for key from cs and

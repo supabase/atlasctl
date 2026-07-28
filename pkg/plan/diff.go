@@ -45,10 +45,18 @@ type Changeset []Change
 
 // DesiredState builds the desired measurement map from per-measurement
 // selection results. selected maps measurement name to its ordered cohort
-// selection output. namespace is the effective namespace string (after
-// TagCodec defaulting) and is embedded in every MsmSpec so isStructuralChange
-// can detect namespace changes.
-func DesiredState(cfg config.Config, selected map[string][]selection.SelectedCohort, namespace string) map[MsmKey]MsmSpec {
+// selection output.
+//
+// The namespace is derived from cfg.Namespace: if empty, DefaultNamespace is
+// used. The effective namespace is embedded in every MsmSpec so isStructuralChange
+// can detect namespace changes. Deriving it here (rather than accepting it as a
+// parameter) ensures callers cannot accidentally pass a stale or empty value.
+func DesiredState(cfg config.Config, selected map[string][]selection.SelectedCohort) map[MsmKey]MsmSpec {
+	ns := cfg.Namespace
+	if ns == "" {
+		ns = DefaultNamespace
+	}
+
 	desired := make(map[MsmKey]MsmSpec)
 	for _, msm := range cfg.Measurements {
 		cohorts, ok := selected[msm.Name]
@@ -61,14 +69,17 @@ func DesiredState(cfg config.Config, selected map[string][]selection.SelectedCoh
 			for i, p := range sc.Probes {
 				ids[i] = p.ID
 			}
+			msmType := MsmType(msm.Type)
 			desired[key] = MsmSpec{
-				Key:       key,
-				Namespace: namespace,
-				Target:    msm.Target,
-				Type:      MsmType(msm.Type),
-				AF:        msm.AF,
-				Interval:  sc.Cohort.IntervalSeconds,
-				ProbeIDs:  ids,
+				Key:           key,
+				Namespace:     ns,
+				Target:        msm.Target,
+				Type:          msmType,
+				AF:            msm.AF,
+				Interval:      sc.Cohort.IntervalSeconds,
+				ProbeIDs:      ids,
+				HourlyCredits: specHourlyCredits(len(ids), msmType, sc.Cohort.IntervalSeconds),
+				DailyCredits:  specDailyCredits(len(ids), msmType, sc.Cohort.IntervalSeconds),
 			}
 		}
 	}
@@ -136,12 +147,23 @@ func Diff(desired map[MsmKey]MsmSpec, state StateFile) Changeset {
 // isStructuralChange reports whether any immutable attribute has changed between
 // the recorded state and the desired state.
 //
-// Namespace is only compared when rec.Namespace is non-empty. A blank
-// rec.Namespace means the record was written before namespace tracking was
-// added — in that case the check is deferred to LiveDiff, which fetches the
-// live measurement by ID to confirm the namespace.
+// Both an empty rec.Namespace and an empty want.Namespace are treated as
+// DefaultNamespace. An empty stored namespace means the record predates namespace
+// tracking; an empty desired namespace means the caller did not set one (the
+// codec always defaults to DefaultNamespace). Treating both as DefaultNamespace
+// ensures that pkg callers who never set namespace see no spurious structural
+// changes, while a change from the default to a custom value is correctly
+// detected without requiring a live API call.
 func isStructuralChange(rec MsmRecord, want MsmSpec) bool {
-	if rec.Namespace != "" && rec.Namespace != want.Namespace {
+	recNS := rec.Namespace
+	if recNS == "" {
+		recNS = DefaultNamespace
+	}
+	wantNS := want.Namespace
+	if wantNS == "" {
+		wantNS = DefaultNamespace
+	}
+	if recNS != wantNS {
 		return true
 	}
 	return rec.Target != want.Target ||

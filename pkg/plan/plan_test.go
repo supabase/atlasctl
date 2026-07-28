@@ -320,8 +320,9 @@ func TestDiff_NamespaceChange(t *testing.T) {
 }
 
 func TestDiff_NamespaceMissing_NoStaticChange(t *testing.T) {
-	// State has no stored namespace (old state file) — isStructuralChange must
-	// not fire for a namespace mismatch; the check is deferred to LiveDiff.
+	// State has no stored namespace (old state file). Empty namespace is treated
+	// as DefaultNamespace ("atlasctl"), so when the desired namespace is also
+	// "atlasctl" there is no structural change.
 	key := plan.MsmKey{Name: "dns-canary", Cohort: "high-freq"}
 	desired := map[plan.MsmKey]plan.MsmSpec{
 		key: {
@@ -346,10 +347,49 @@ func TestDiff_NamespaceMissing_NoStaticChange(t *testing.T) {
 
 	cs := plan.Diff(desired, state)
 
-	// No structural change from the static diff — should be a noop.
+	// No structural change — empty stored namespace == default == desired.
 	findChange(t, cs, key, plan.ChangeNoOp)
 	assert.Empty(t, findChanges(cs, key, plan.ChangeStop))
 	assert.Empty(t, findChanges(cs, key, plan.ChangeCreate))
+}
+
+func TestDiff_NamespaceMissing_WithChange(t *testing.T) {
+	// State has no stored namespace (old state file) but the user has changed
+	// their configured namespace to a custom value. Empty stored namespace is
+	// treated as DefaultNamespace; the mismatch must trigger stop+create so that
+	// pkg callers who use Diff directly (not LiveDiff) see the change.
+	key := plan.MsmKey{Name: "dns-canary", Cohort: "high-freq"}
+	desired := map[plan.MsmKey]plan.MsmSpec{
+		key: {
+			Namespace: "my-ns",
+			Target:    "canary.supabase.co",
+			Type:      plan.MsmTypeDNS,
+			Interval:  60,
+			ProbeIDs:  []uint32{1, 2},
+		},
+	}
+	state := sampleState(struct {
+		name, cohort string
+		rec          plan.MsmRecord
+	}{"dns-canary", "high-freq", plan.MsmRecord{
+		MsmID:  12345678,
+		Target: "canary.supabase.co",
+		Type:   "dns",
+		// Namespace intentionally empty — old state, predates namespace tracking.
+		Interval: 60,
+		ProbeIDs: []uint32{1, 2},
+	}})
+
+	cs := plan.Diff(desired, state)
+
+	stop := findChange(t, cs, key, plan.ChangeStop)
+	assert.Equal(t, uint64(12345678), stop.MsmID)
+
+	create := findChange(t, cs, key, plan.ChangeCreate)
+	require.NotNil(t, create.Desired)
+	assert.Equal(t, "my-ns", create.Desired.Namespace)
+
+	assert.Empty(t, findChanges(cs, key, plan.ChangeNoOp))
 }
 
 func TestDiff_MultipleEntries(t *testing.T) {
@@ -430,7 +470,7 @@ func TestDesiredState(t *testing.T) {
 		},
 	}
 
-	desired := plan.DesiredState(cfg, allSelected, "atlasctl")
+	desired := plan.DesiredState(cfg, allSelected)
 
 	require.Len(t, desired, 3) // dns-canary/high-freq, dns-canary/low-freq, ping-edge/low-freq
 
@@ -440,11 +480,17 @@ func TestDesiredState(t *testing.T) {
 	assert.Equal(t, plan.MsmTypeDNS, d.Type)
 	assert.Equal(t, 60, d.Interval)
 	assert.ElementsMatch(t, []uint32{10, 20}, d.ProbeIDs)
+	// 2 probes × 10 credits × 3600/60  = 1200/hour; × 86400/60 = 28800/day
+	assert.Equal(t, int64(1200), d.HourlyCredits)
+	assert.Equal(t, int64(28800), d.DailyCredits)
 
 	d = desired[plan.MsmKey{Name: "dns-canary", Cohort: "low-freq"}]
 	assert.Equal(t, "atlasctl", d.Namespace)
 	assert.Equal(t, 900, d.Interval)
 	assert.ElementsMatch(t, []uint32{30, 40, 50}, d.ProbeIDs)
+	// 3 probes × 10 credits × 3600/900 = 120/hour; × 86400/900 = 2880/day
+	assert.Equal(t, int64(120), d.HourlyCredits)
+	assert.Equal(t, int64(2880), d.DailyCredits)
 
 	d = desired[plan.MsmKey{Name: "ping-edge", Cohort: "low-freq"}]
 	assert.Equal(t, "atlasctl", d.Namespace)
@@ -452,6 +498,40 @@ func TestDesiredState(t *testing.T) {
 	assert.Equal(t, plan.MsmTypePing, d.Type)
 	assert.Equal(t, 900, d.Interval)
 	assert.ElementsMatch(t, []uint32{30, 40, 50}, d.ProbeIDs)
+	// 3 probes × 3 credits × 3600/900 = 36/hour; × 86400/900 = 864/day
+	assert.Equal(t, int64(36), d.HourlyCredits)
+	assert.Equal(t, int64(864), d.DailyCredits)
+}
+
+func TestDesiredState_CustomNamespace(t *testing.T) {
+	// When cfg.Namespace is set, DesiredState must embed it in every spec.
+	cfg := config.Config{
+		Namespace: "my-ns",
+		Measurements: []config.Measurement{
+			{
+				Name:   "dns-canary",
+				Type:   config.TypeDNS,
+				Target: "canary.supabase.co",
+				AF:     4,
+				Cohorts: []config.MeasurementCohort{
+					{Name: "high-freq", ProbeCount: 2, MaxProbesPerCell: 1, IntervalSeconds: 60},
+				},
+			},
+		},
+	}
+	allSelected := map[string][]selection.SelectedCohort{
+		"dns-canary": {
+			{
+				Cohort: config.MeasurementCohort{Name: "high-freq", IntervalSeconds: 60},
+				Probes: []snapshot.Probe{{ID: 1}, {ID: 2}},
+			},
+		},
+	}
+
+	desired := plan.DesiredState(cfg, allSelected)
+
+	d := desired[plan.MsmKey{Name: "dns-canary", Cohort: "high-freq"}]
+	assert.Equal(t, "my-ns", d.Namespace)
 }
 
 // ── credit estimation ─────────────────────────────────────────────────────────

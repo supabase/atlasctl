@@ -258,7 +258,8 @@ func (b *blockOnListClient) ListMyMeasurements(ctx context.Context) ([]plan.MsmI
 
 // TestLiveDiff_NamespaceMismatch_OldState covers the migration case: state was
 // written before namespace tracking, so rec.Namespace is empty. isStructuralChange
-// skips the check; LiveDiff calls GetMeasurement and detects the mismatch.
+// treats the empty namespace as DefaultNamespace and detects the mismatch
+// statically; LiveDiff then suppresses the ghost warning via alreadyStopping.
 func TestLiveDiff_NamespaceMismatch_OldState(t *testing.T) {
 	key := plan.MsmKey{Name: "dns-canary", Cohort: "high-freq"}
 
@@ -417,4 +418,108 @@ func TestLiveDiff_GetMeasurementError(t *testing.T) {
 
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "checking measurement 12345678 for namespace drift")
+}
+
+// ── provider-style tests (caller never sets Namespace on MsmSpec) ─────────────
+
+// TestLiveDiff_ProviderStyle_NamespaceChange covers the Pulumi provider pattern:
+// the provider does not set Namespace on desired specs (namespace is a
+// provider-level concern). The live measurement is running under the old
+// namespace. LiveDiff must detect the mismatch via GetMeasurement, replace with
+// stop+create, and tag the new measurement with the codec namespace — not "".
+func TestLiveDiff_ProviderStyle_NamespaceChange(t *testing.T) {
+	key := plan.MsmKey{Name: "dns-canary", Cohort: "high-freq"}
+	newCodec := plan.NewTagCodec("supabase-platform")
+
+	// Desired has NO namespace set (provider omits it).
+	desired := map[plan.MsmKey]plan.MsmSpec{
+		key: {
+			// Namespace intentionally not set — provider pattern.
+			Target:   "canary.supabase.co",
+			Type:     plan.MsmTypeDNS,
+			Interval: 60,
+			ProbeIDs: []uint32{1, 2},
+		},
+	}
+
+	// State also has no namespace (predates namespace tracking or provider
+	// never persists it).
+	state := plan.NewStateFile()
+	state.SetRecord("dns-canary", "high-freq", plan.MsmRecord{
+		MsmID:    12345678,
+		Target:   "canary.supabase.co",
+		Type:     "dns",
+		Interval: 60,
+		ProbeIDs: []uint32{1, 2},
+	})
+
+	// ListMyMeasurements (filtered by "supabase-platform") returns nothing.
+	// GetMeasurement returns the live measurement tagged with the old namespace.
+	oldNsInfo := taggedInfoNS(12345678, "atlasctl", "dns-canary", "high-freq")
+	client := &plan.FakeMsmClient{
+		Measurements: map[uint64]plan.MsmInfo{12345678: oldNsInfo},
+		ListResult:   nil,
+	}
+
+	cs, warnings, err := plan.LiveDiff(context.Background(), desired, state, client, newCodec)
+
+	require.NoError(t, err)
+	assert.Empty(t, warnings, "namespace mismatch must not produce a ghost warning")
+
+	stops := findChanges(cs, key, plan.ChangeStop)
+	creates := findChanges(cs, key, plan.ChangeCreate)
+	require.Len(t, stops, 1, "expected one Stop")
+	require.Len(t, creates, 1, "expected one Create")
+	assert.Equal(t, uint64(12345678), stops[0].MsmID)
+	// Critical: new measurement must carry the codec namespace, not "".
+	assert.Equal(t, "supabase-platform", creates[0].Desired.Namespace)
+}
+
+// TestLiveDiff_ProviderStyle_AlreadyCorrectNamespace covers the case where the
+// provider has always used a custom namespace and measurements are already
+// running under it, but the state has no stored namespace. LiveDiff must
+// detect that the measurement is already correct (via live list) and NOT
+// trigger a spurious stop+create.
+func TestLiveDiff_ProviderStyle_AlreadyCorrectNamespace(t *testing.T) {
+	key := plan.MsmKey{Name: "dns-canary", Cohort: "high-freq"}
+	codec := plan.NewTagCodec("supabase-platform")
+
+	// Desired has NO namespace set — provider pattern.
+	desired := map[plan.MsmKey]plan.MsmSpec{
+		key: {
+			Target:   "canary.supabase.co",
+			Type:     plan.MsmTypeDNS,
+			Interval: 60,
+			ProbeIDs: []uint32{1, 2},
+		},
+	}
+
+	// State has no namespace stored.
+	state := plan.NewStateFile()
+	state.SetRecord("dns-canary", "high-freq", plan.MsmRecord{
+		MsmID:    12345678,
+		Target:   "canary.supabase.co",
+		Type:     "dns",
+		Interval: 60,
+		ProbeIDs: []uint32{1, 2},
+	})
+
+	// ListMyMeasurements (filtered by "supabase-platform") DOES return the
+	// measurement — it is already tagged correctly.
+	alreadyCorrect := taggedInfoNS(12345678, "supabase-platform", "dns-canary", "high-freq")
+	client := &plan.FakeMsmClient{
+		Measurements: map[uint64]plan.MsmInfo{12345678: alreadyCorrect},
+		ListResult:   []plan.MsmInfo{alreadyCorrect},
+	}
+
+	cs, warnings, err := plan.LiveDiff(context.Background(), desired, state, client, codec)
+
+	require.NoError(t, err)
+	assert.Empty(t, warnings, "no warnings expected when everything is correct")
+
+	// Must be noop — the measurement is already running under the right namespace.
+	require.Len(t, cs, 1)
+	assert.Equal(t, plan.ChangeNoOp, cs[0].Kind)
+	assert.Empty(t, findChanges(cs, key, plan.ChangeStop))
+	assert.Empty(t, findChanges(cs, key, plan.ChangeCreate))
 }
