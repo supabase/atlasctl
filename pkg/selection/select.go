@@ -187,13 +187,12 @@ func Select(
 		selected := make([]snapshot.Probe, 0, cohort.ProbeCount)
 		remaining := cohort.ProbeCount
 
-		// Process IncludeProbeIDs first. They bypass H3 cell capacity.
+		// Process IncludeProbeIDs first. They bypass H3 cell capacity, tag
+		// exclusions, ExcludeProbeIDs, and inter-cohort exclusions. The only
+		// reason a pinned probe is skipped is if it is absent from the snapshot.
 		for _, id := range cohort.IncludeProbeIDs {
 			if remaining <= 0 {
 				break
-			}
-			if _, excluded := cohortExcluded[id]; excluded {
-				continue
 			}
 			p, ok := probeByID[id]
 			if !ok {
@@ -212,6 +211,9 @@ func Select(
 					break
 				}
 				if _, excluded := cohortExcluded[p.ID]; excluded {
+					continue
+				}
+				if HardExcluded(p, cohort.Cfg.ExcludeTags) {
 					continue
 				}
 				cell := h3.LatLonToCell(p.Lat, p.Lon, h3Resolution)
