@@ -53,7 +53,7 @@ func newApplyCmd(f *globalFlags, deps Deps) *cobra.Command {
 				return err
 			}
 			codec := plan.NewTagCodec(cfg.Namespace)
-			desired := plan.DesiredState(*cfg, allSelected, codec.Namespace())
+			desired := plan.DesiredState(*cfg, allSelected)
 
 			applyClient, err := deps.NewApplyClient(apiKey, f.Verbose, codec)
 			if err != nil {

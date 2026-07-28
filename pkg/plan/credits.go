@@ -20,6 +20,24 @@ type CreditEstimate struct {
 	Weekly int64
 }
 
+// specHourlyCredits returns the projected hourly credit burn for spec.
+//
+//	credits/hour = probe_count × credits_per_result(type) × (3600 / interval_seconds)
+func specHourlyCredits(probeCount int, msmType MsmType, intervalSecs int) int64 {
+	return int64(probeCount) *
+		int64(config.CreditsPerResult(config.MeasurementType(msmType))) *
+		3600 / int64(intervalSecs)
+}
+
+// specDailyCredits returns the projected daily credit burn for spec.
+//
+//	credits/day = probe_count × credits_per_result(type) × (86400 / interval_seconds)
+func specDailyCredits(probeCount int, msmType MsmType, intervalSecs int) int64 {
+	return int64(probeCount) *
+		int64(config.CreditsPerResult(config.MeasurementType(msmType))) *
+		86400 / int64(intervalSecs)
+}
+
 // EstimateCredits computes the projected daily and weekly RIPE Atlas credit
 // burn for a desired state map, as returned by DesiredState.
 //
@@ -31,9 +49,7 @@ type CreditEstimate struct {
 func EstimateCredits(desired map[MsmKey]MsmSpec) CreditEstimate {
 	var est CreditEstimate
 	for key, d := range desired {
-		cpd := int64(len(d.ProbeIDs)) *
-			int64(config.CreditsPerResult(config.MeasurementType(d.Type))) *
-			86400 / int64(d.Interval)
+		cpd := specDailyCredits(len(d.ProbeIDs), d.Type, d.Interval)
 		est.Lines = append(est.Lines, CreditLine{
 			Key:          key,
 			Type:         d.Type,

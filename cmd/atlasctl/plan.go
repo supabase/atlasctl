@@ -77,7 +77,7 @@ func newPlanCmd(f *globalFlags, deps Deps) *cobra.Command {
 				return err
 			}
 			codec := plan.NewTagCodec(cfg.Namespace)
-			desired := plan.DesiredState(*cfg, allSelected, codec.Namespace())
+			desired := plan.DesiredState(*cfg, allSelected)
 
 			msmClient, err := deps.NewMsmClient(apiKey, f.Verbose, codec)
 			if err != nil {

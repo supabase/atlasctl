@@ -18,6 +18,12 @@ type MsmSpec struct {
 	AF        int // address family: 4 or 6
 	Interval  int
 	ProbeIDs  []uint32
+
+	// HourlyCredits and DailyCredits are the projected RIPE Atlas credit burn
+	// for this measurement. They are populated by DesiredState once ProbeIDs are
+	// known and are deterministic for a given (ProbeIDs, Type, Interval) triple.
+	HourlyCredits int64
+	DailyCredits  int64
 }
 
 // ApplyClient extends MsmClient with the mutating operations needed by Apply.
