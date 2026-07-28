@@ -12,13 +12,13 @@ Terms used throughout atlasctl documentation, CLI output, config files, and stat
 
 **continental zone** — one of six fixed geographic regions used during selection to interleave probes across continents before cohort slots are filled. Fixed order: NA, EU, APAC, LATAM, MENA, SSA.
 
-**credit** — RIPE Atlas platform currency consumed per measurement result. Costs: DNS and TLS 10 per result, ping 3, traceroute 30. One-off measurements cost 2x the periodic rate.
+**credit** — RIPE Atlas platform currency consumed per measurement result. Costs: DNS, TLS, and HTTP 10 per result, ping 3, traceroute 30. One-off measurements cost 2x the periodic rate.
 
 **description tag** — a structured string embedded in each RIPE Atlas measurement description by atlasctl (`[atlasctl:<name>:<cohort>]`). Marks a measurement as managed and allows recovery if state.yaml is lost. The namespace is configurable via `namespace` in config.
 
 **drift** — discrepancy between state.yaml and the live RIPE Atlas API. Two kinds: orphan (a live tagged measurement absent from state) and ghost (a state record whose measurement ID is no longer live). Reported as warnings by `plan`.
 
-**measurement** (atlasctl config) — a named intent to observe a target using a specific type (dns, tls, ping, traceroute). Combined with a cohort, it produces one RIPE Atlas measurement.
+**measurement** (atlasctl config) — a named intent to observe a target using a specific type (dns, tls, ping, traceroute, http). Combined with a cohort, it produces one RIPE Atlas measurement.
 
 **measurement** (RIPE Atlas) — a live platform object with a permanent integer ID that runs active measurements from a set of probes at a fixed interval. The physical resource atlasctl creates and manages.
 
@@ -32,7 +32,7 @@ Terms used throughout atlasctl documentation, CLI output, config files, and stat
 
 **score** — numeric rank assigned to a probe by the scoring algorithm. Base score is 1. Matching scoring criteria (ASN, country, tag, stability) add to it. All criteria are additive. Score determines which band a probe falls into.
 
-**selection** — the full process run by `atlasctl select`: build a filtered probe pool from the snapshot, then for each measurement independently score every probe using that measurement's cohort config, assign bands, apply H3 cell limits, interleave by continental zone within each band, and fill the measurement's cohorts from the resulting ordered list. Each measurement runs its own independent selection; the same physical probe can be selected for multiple measurements.
+**selection** — the full process run by `atlasctl select`: load the full probe pool from the snapshot, then for each measurement independently score every probe using that measurement's cohort config, assign bands, apply per-cohort tag exclusions (`CohortCfg.exclude_tags`), apply H3 cell limits, interleave by continental zone within each band, and fill the measurement's cohorts from the resulting ordered list. Each measurement runs its own independent selection; the same physical probe can be selected for multiple measurements.
 
 **snapshot** — a cached JSON dump of all connected RIPE Atlas probes, written by `atlasctl refresh`. Selection reads the snapshot and makes no network calls. Refresh weekly or on demand to pick up changes in the probe pool.
 

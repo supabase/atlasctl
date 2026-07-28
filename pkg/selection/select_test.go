@@ -322,25 +322,25 @@ func TestSelect_CityScore(t *testing.T) {
 }
 
 func TestSelect_HardExclusion(t *testing.T) {
-	// Hard exclusion is the caller's responsibility: filter before building Probes.
+	// Tag exclusion is per-cohort via CohortCfg.ExcludeTags. The full probe pool
+	// is passed to Select; excluded probes are filtered inside the selection loop.
 	rawProbes := []snapshot.Probe{
 		{ID: 1, ASN4: 7018, CountryCode: "US", Tags: []string{"office"}, Lat: 10, Lon: 10, StatusID: 1},
 		{ID: 2, ASN4: 7018, CountryCode: "US", Tags: []string{"broken"}, Lat: 11, Lon: 11, StatusID: 1},
 		{ID: 3, ASN4: 7018, CountryCode: "US", Tags: []string{"system-flakey-power"}, Lat: 12, Lon: 12, StatusID: 1},
 		{ID: 4, ASN4: 7018, CountryCode: "US", Tags: []string{"home"}, Lat: 13, Lon: 13, StatusID: 1},
 	}
-	excludeTags := []string{"broken", "system-flakey-power"}
 
-	filtered := selection.NewProbes(len(rawProbes))
+	probes := selection.NewProbes(len(rawProbes))
 	for _, p := range rawProbes {
-		if !selection.HardExcluded(p, excludeTags) {
-			filtered.Append(p)
-		}
+		probes.Append(p)
 	}
-	filtered.Close()
+	probes.Close()
 
-	cohorts := []config.MeasurementCohort{minimalCohort("r1", 10, 5)}
-	result, err := selection.Select(context.Background(), filtered, cohorts, defaultOrderer(), 3)
+	cohort := minimalCohort("r1", 10, 5)
+	cohort.Cfg.ExcludeTags = []string{"broken", "system-flakey-power"}
+
+	result, err := selection.Select(context.Background(), probes, []config.MeasurementCohort{cohort}, defaultOrderer(), 3)
 	require.NoError(t, err)
 	require.Len(t, result, 1)
 
@@ -424,6 +424,38 @@ func TestSelect_IncludeBypassesH3Cap(t *testing.T) {
 	assert.True(t, ids[2], "probe 2 must be included (bypasses H3 cap)")
 	// Only 1 additional probe can be selected due to the cap; total = 3.
 	assert.Len(t, result[0].Probes, 3)
+}
+
+func TestSelect_IncludeOverridesExclusions(t *testing.T) {
+	// include_probe_ids takes precedence over exclude_probe_ids, exclude_tags,
+	// and inter-cohort exclusions. The only thing that blocks a pinned probe
+	// is absence from the snapshot.
+	rawProbes := []snapshot.Probe{
+		{ID: 1, ASN4: 7018, CountryCode: "US", Tags: []string{"starlink"}, Lat: 10, Lon: 10, StatusID: 1},
+		{ID: 2, ASN4: 7018, CountryCode: "US", Tags: []string{"office"}, Lat: 11, Lon: 11, StatusID: 1},
+		{ID: 3, ASN4: 7018, CountryCode: "US", Tags: []string{"home"}, Lat: 12, Lon: 12, StatusID: 1},
+	}
+	probes := makeProbes(rawProbes)
+
+	// Cohort 1 selects probe 2, making it inter-cohort excluded for cohort 2.
+	// Cohort 2 pins probes 1 (tag-excluded) and 2 (inter-cohort excluded) and
+	// also lists probe 1 in exclude_probe_ids. All three exclusions must lose.
+	cohort1 := minimalCohort("c1", 1, 5)
+	cohort2 := minimalCohort("c2", 2, 5)
+	cohort2.IncludeProbeIDs = []uint32{1, 2}
+	cohort2.ExcludeProbeIDs = []uint32{1}
+	cohort2.Cfg.ExcludeTags = []string{"starlink"}
+
+	result, err := selection.Select(context.Background(), probes, []config.MeasurementCohort{cohort1, cohort2}, defaultOrderer(), 3)
+	require.NoError(t, err)
+	require.Len(t, result, 2)
+
+	ids := make(map[uint32]bool)
+	for _, p := range result[1].Probes {
+		ids[p.ID] = true
+	}
+	assert.True(t, ids[1], "probe 1 must be included despite tag exclusion and ExcludeProbeIDs")
+	assert.True(t, ids[2], "probe 2 must be included despite inter-cohort exclusion")
 }
 
 func TestSelect_SmallSnapshot(t *testing.T) {

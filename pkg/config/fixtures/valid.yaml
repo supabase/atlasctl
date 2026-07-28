@@ -4,6 +4,11 @@ state: state.yaml
 cohort_configs:
   standard:
     disable_continental_shuffle: false
+    exclude_tags:
+      - broken
+      - system-flakey-connection
+      - system-flakey-power
+      - system-ipv4-doesnt-work
     asn:
       7018: 10   # AT&T
       7922: 8    # Comcast
@@ -100,12 +105,6 @@ measurements:
         max_probes_per_cell: 3
         interval_seconds: 900
         cfg_preset: latam-focus
-
-exclude_tags:
-  - broken
-  - system-flakey-connection
-  - system-flakey-power
-  - system-ipv4-doesnt-work
 
 geo_diversity:
   h3_resolution: 3

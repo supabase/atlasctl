@@ -19,9 +19,7 @@ import (
 func selectAll(ctx context.Context, probeList []snapshot.Probe, cfg config.Config) (map[string][]selection.SelectedCohort, error) {
 	probes := selection.NewProbes(len(probeList))
 	for _, p := range probeList {
-		if !selection.HardExcluded(p, cfg.ExcludeTags) {
-			probes.Append(p)
-		}
+		probes.Append(p)
 	}
 	probes.Close()
 

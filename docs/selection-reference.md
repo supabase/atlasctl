@@ -15,7 +15,6 @@ For a conceptual walkthrough of how bands, cohorts, and continental coverage int
 | `namespace` | string | `atlasctl` | Namespace embedded in RIPE Atlas measurement descriptions and tags. Used to scope managed measurements and filter by ownership during drift detection |
 | `cohort_configs` | map | | Named `CohortCfg` presets for reuse across cohorts. Referenced via `cfg_preset` |
 | `measurements` | list | | The measurements atlasctl will manage |
-| `exclude_tags` | list of string | | Probes carrying any of these tags are excluded from all measurements |
 | `geo_diversity.h3_resolution` | int | 3 | H3 hexagonal cell resolution (1-15). Controls the geographic granularity of the per-cell probe cap |
 
 ### Measurement fields
@@ -45,8 +44,8 @@ Each entry in a measurement's `cohorts` list:
 | `probe_count` | int | yes | Target number of probes to select |
 | `max_probes_per_cell` | int | yes | Maximum probes allowed from the same H3 cell |
 | `interval_seconds` | int | yes | Measurement interval passed to the RIPE Atlas API. Minimum: 60 |
-| `include_probe_ids` | list of int | no | Probe IDs to force-include before scored selection. These bypass the H3 cell cap |
-| `exclude_probe_ids` | list of int | no | Probe IDs to skip in this cohort regardless of score |
+| `include_probe_ids` | list of int | no | Probe IDs that are always selected first, regardless of score, H3 cap, `exclude_probe_ids`, `cfg.exclude_tags`, or inter-cohort exclusions. The only reason a pinned probe is skipped is if it is absent from the snapshot |
+| `exclude_probe_ids` | list of int | no | Probe IDs to skip during scored selection. Has no effect on probes listed in `include_probe_ids` |
 | `cfg_preset` | string | no | Name of a preset defined in `cohort_configs`. Used unless `cfg` is also present |
 | `cfg` | CohortCfg | no | Inline ordering config. Takes priority over `cfg_preset` if both are specified |
 
@@ -58,6 +57,7 @@ The body of a `cfg` block or a named preset in `cohort_configs`:
 
 | Field | Type | Description |
 |---|---|---|
+| `exclude_tags` | list of string | Probes carrying any of these tags are skipped for this cohort. Takes priority over `include_probe_ids`. See [Tag exclusions](#tag-exclusions) |
 | `asn` | map of int to int | Per-ASN score weights. A probe whose ASN matches receives the specified weight added to its score |
 | `tags` | map of string to int | Per-tag score weights. Weights for all matching tags are summed |
 | `countries` | map of string to int | Per-country score weights. Two-letter ISO 3166-1 alpha-2 codes |
@@ -89,7 +89,7 @@ Selection runs independently for each measurement. Every measurement scores and 
 
 ### Step 1: Build the probe pool
 
-Before any per-measurement work begins, atlasctl applies global hard exclusions. Probes carrying any tag in `exclude_tags` are removed from the pool. The filtered pool is shared across all measurements.
+The full set of connected probes from the snapshot is loaded into a single immutable pool shared across all measurements. Per-cohort tag exclusions (`CohortCfg.exclude_tags`) are applied later, inside the selection loop for each cohort, not here.
 
 ### Step 2: Score probes (per cohort)
 
@@ -170,8 +170,8 @@ For each cohort:
 
 1. Build the effective exclusion set: union of the inter-cohort excluded set and the cohort's `exclude_probe_ids`.
 2. Derive per-cell density coefficients from `cfg.cities` using each city's `density_coefficient` and `radius_km`.
-3. Process `include_probe_ids` first. For each ID in the probe pool that is not excluded: add it to the selected list. Included probes bypass the H3 cell cap and are added to the exclusion set to prevent double-selection by the orderer.
-4. Walk the orderer's list to fill remaining slots. For each probe: skip if excluded; skip if the probe's H3 cell is at capacity; otherwise add to selected, mark the cell occupied, add the probe to the exclusion set.
+3. Process `include_probe_ids` first. For each ID present in the snapshot: add it to the selected list unconditionally. Pinned probes bypass the H3 cell cap, `exclude_probe_ids`, `cfg.exclude_tags`, and inter-cohort exclusions. Their IDs are added to the exclusion set to prevent double-selection during the fill step.
+4. Walk the orderer's list to fill remaining slots. For each probe: skip if excluded; skip if it matches `cfg.exclude_tags`; skip if the probe's H3 cell is at capacity; otherwise add to selected, mark the cell occupied, add the probe to the exclusion set.
 5. Add all selected probe IDs to the inter-cohort exclusion set for subsequent cohorts within this measurement.
 
 H3 cell occupancy and city density coefficients reset per cohort. A cell at capacity in `high-freq` starts empty again for `low-freq`.
@@ -203,6 +203,28 @@ H3 is Uber's hexagonal hierarchical spatial index. Each probe maps to a hexagona
 The zone order is fixed: NA, EU, APAC, LATAM, MENA, SSA. Antarctica is not included. Probes with unmapped country codes fall to NA as a safe default.
 
 See [bands-cohorts-explainer.md](bands-cohorts-explainer.md) for minimum probe count guidance per coverage goal.
+
+## Tag exclusions
+
+`CohortCfg.exclude_tags` is a list of probe tags. Any probe carrying at least one of those tags is skipped during scored fill for that cohort. Probes pinned via `include_probe_ids` are not affected — pinned IDs take precedence over all exclusions.
+
+Because `exclude_tags` is part of `CohortCfg`, it travels with named presets. The typical pattern is to put universally-unwanted tags in a shared preset and leave them out of any cohort that intentionally targets those probes:
+
+```yaml
+cohort_configs:
+  standard:
+    exclude_tags:
+      - broken
+      - system-flakey-connection
+      - starlink         # satellite probes — poor geo signal for most cohorts
+
+  satellite:
+    # No exclude_tags. Starlink probes are candidates here.
+    asn:
+      SpaceX: 20
+```
+
+Both cohorts draw from the same full probe pool. The `standard` preset filters at selection time; the `satellite` preset does not. No global exclusion is needed.
 
 ## Named presets
 

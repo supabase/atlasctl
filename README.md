@@ -186,7 +186,7 @@ measurements:
 
 ### Pinning and excluding specific probes
 
-Use `include_probe_ids` to force specific probes into a cohort regardless of scoring or H3 cell limits. Use `exclude_probe_ids` to prevent specific probes from appearing in a cohort. Both fields are per cohort.
+Use `include_probe_ids` to force specific probes into a cohort. Pinned probes are selected unconditionally: they bypass H3 cell limits, `exclude_probe_ids`, tag exclusions, and inter-cohort exclusions. The only reason a pinned probe is skipped is if it is absent from the snapshot. Use `exclude_probe_ids` to prevent specific probes from appearing during scored selection. Both fields are per cohort.
 
 ```yaml
 cohorts:
@@ -267,18 +267,37 @@ If both `cfg_preset` and `cfg` appear on the same cohort, the inline `cfg` wins 
 ### Global settings
 
 ```yaml
-# Hard exclusions: probes with any of these tags are never candidates.
-exclude_tags:
-  - broken
-  - system-flakey-connection
-  - system-flakey-power
-  - system-ipv4-doesnt-work
-
 # H3 hexagonal grid resolution for geographic diversity (1-15, default 3).
 # Resolution 3 gives cells roughly the size of a state or province (~12,000 km²).
 geo_diversity:
   h3_resolution: 3
 ```
+
+### Tag exclusions
+
+Tag-based probe exclusion is per-cohort via `exclude_tags` in a `CohortCfg` block. Probes carrying any listed tag are skipped during scored selection for that cohort. Probes pinned via `include_probe_ids` are not affected.
+
+Because exclusions are part of `CohortCfg`, they travel with named presets:
+
+```yaml
+cohort_configs:
+  standard:
+    exclude_tags:
+      - broken
+      - system-flakey-connection
+      - starlink
+    asn:
+      7018: 10
+    stability:
+      system-ipv4-stable-90d: 5
+
+  satellite:
+    # No exclude_tags — starlink probes are candidates here.
+    asn:
+      SpaceX: 20
+```
+
+Any cohort using `cfg_preset: standard` excludes those tags. A cohort using `cfg_preset: satellite` or its own inline `cfg` block is unaffected. This makes it possible to exclude a provider from most cohorts while targeting it explicitly in another.
 
 For a complete reference of all configuration fields and the selection algorithm, see [docs/selection-reference.md](docs/selection-reference.md).
 

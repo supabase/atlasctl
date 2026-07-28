@@ -19,18 +19,19 @@ type Config struct {
 	Namespace     string               `yaml:"namespace"`
 	CohortConfigs map[string]CohortCfg `yaml:"cohort_configs"`
 	Measurements  []Measurement        `yaml:"measurements"`
-	ExcludeTags   []string             `yaml:"exclude_tags"`
 	GeoDiversity  GeoConfig            `yaml:"geo_diversity"`
 }
 
-// CohortCfg is the full ordering config for one cohort tier. It is the input
-// to both ProbeWeighter (for per-probe scoring) and ProbeOrderer (for global
-// reordering knobs). Named presets are defined in Config.CohortConfigs.
+// CohortCfg is the full selection config for one cohort tier. It covers both
+// hard filtering (ExcludeTags) and soft scoring/ordering (ScoringConfig,
+// Cities, DisableContinentalShuffle). Named presets are defined in
+// Config.CohortConfigs.
 //
 // Cities covers both scoring bonuses (Score field) and H3 density coefficients
 // (DensityCoefficient field). Both are per-cohort preferences.
 type CohortCfg struct {
 	ScoringConfig             `yaml:",inline"`
+	ExcludeTags               []string     `yaml:"exclude_tags"`
 	Cities                    []CityConfig `yaml:"cities"`
 	DisableContinentalShuffle bool         `yaml:"disable_continental_shuffle"`
 }
