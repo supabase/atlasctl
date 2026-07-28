@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-07-28
+
 ### Added
 
 - `ProbeSource` interface (`FileProbeSource`, `CachedProbeSource`) for probe list acquisition ([#33](https://github.com/supabase/atlasctl/pull/33))
