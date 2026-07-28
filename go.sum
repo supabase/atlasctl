@@ -30,8 +30,8 @@ github.com/miekg/dns v1.1.72/go.mod h1:+EuEPhdHOsfk6Wk5TT2CzssZdqkmFhf8r+aVyDETo
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 h1:Jamvg5psRIccs7FGNTlIRMkT8wgtp5eCXdBlqhYGL6U=
 github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
-github.com/robert-kisteleki/goat v0.8.1 h1:O+GnezkbsToRC5cPU5qbpwlnrRDDep8TMCoqc2+wu5I=
-github.com/robert-kisteleki/goat v0.8.1/go.mod h1:D1igcJwi6/0kbiQqxrWsWoh2iJjhjY72du2ITFdkoBI=
+github.com/robert-kisteleki/goat v0.9.0 h1:/MKFpCugSiz0WPA1W9WzlRJvNvID4dP5GYOx5V19Gfg=
+github.com/robert-kisteleki/goat v0.9.0/go.mod h1:KFszIW5SJsQLUvuyuG4Emi8PqGUApq62FFzECae71u0=
 github.com/rogpeppe/go-internal v1.14.1 h1:UQB4HGPB6osV0SQTLymcB4TgvyWu6ZyliaW0tI/otEQ=
 github.com/rogpeppe/go-internal v1.14.1/go.mod h1:MaRKkUm5W0goXpeCfT7UZI6fk/L7L7so1lCWt35ZSgc=
 github.com/rs/zerolog v1.35.1 h1:m7xQeoiLIiV0BCEY4Hs+j2NG4Gp2o2KPKmhnnLiazKI=

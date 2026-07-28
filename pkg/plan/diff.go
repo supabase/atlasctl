@@ -78,6 +78,10 @@ func DesiredState(cfg config.Config, selected map[string][]selection.SelectedCoh
 				AF:            msm.AF,
 				Interval:      sc.Cohort.IntervalSeconds,
 				ProbeIDs:      ids,
+				HttpMethod:    msm.HttpMethod,
+				HttpPath:      msm.HttpPath,
+				HttpPort:      msm.HttpPort,
+				HttpVersion:   msm.HttpVersion,
 				HourlyCredits: specHourlyCredits(len(ids), msmType, sc.Cohort.IntervalSeconds),
 				DailyCredits:  specDailyCredits(len(ids), msmType, sc.Cohort.IntervalSeconds),
 			}
@@ -166,10 +170,19 @@ func isStructuralChange(rec MsmRecord, want MsmSpec) bool {
 	if recNS != wantNS {
 		return true
 	}
-	return rec.Target != want.Target ||
+	if rec.Target != want.Target ||
 		MsmType(rec.Type) != want.Type ||
 		rec.AF != want.AF ||
-		rec.Interval != want.Interval
+		rec.Interval != want.Interval {
+		return true
+	}
+	if want.Type == MsmTypeHTTP {
+		return rec.HttpMethod != want.HttpMethod ||
+			rec.HttpPath != want.HttpPath ||
+			rec.HttpPort != want.HttpPort ||
+			rec.HttpVersion != want.HttpVersion
+	}
+	return false
 }
 
 // probeDelta returns the probe IDs to add and remove when moving from current

@@ -67,6 +67,7 @@ const (
 	TypePing       MeasurementType = "ping"
 	TypeTLS        MeasurementType = "tls"
 	TypeTraceroute MeasurementType = "traceroute"
+	TypeHTTP       MeasurementType = "http"
 )
 
 // Measurement defines a single measurement target and its cohort assignments.
@@ -76,7 +77,12 @@ type Measurement struct {
 	Target    string              `yaml:"target"`
 	AF        int                 `yaml:"af"`         // address family: 4 or 6, default 4
 	QueryType string              `yaml:"query_type"` // DNS only: A, AAAA, NS, MX, ...
-	Cohorts   []MeasurementCohort `yaml:"cohorts"`
+	// HTTP-only fields. Ignored for all other measurement types.
+	HttpMethod  string `yaml:"http_method"`  // GET, HEAD (default), POST
+	HttpPath    string `yaml:"http_path"`    // URL path (default "/")
+	HttpPort    uint   `yaml:"http_port"`    // default 80
+	HttpVersion string `yaml:"http_version"` // "1.0" or "1.1"
+	Cohorts     []MeasurementCohort `yaml:"cohorts"`
 }
 
 // BandThresholds defines the minimum score for each band tier.
@@ -173,7 +179,11 @@ var validMeasurementTypes = map[MeasurementType]bool{
 	TypePing:       true,
 	TypeTLS:        true,
 	TypeTraceroute: true,
+	TypeHTTP:       true,
 }
+
+var validHttpMethods = map[string]bool{"GET": true, "HEAD": true, "POST": true}
+var validHttpVersions = map[string]bool{"1.0": true, "1.1": true}
 
 func (c *Config) validate() error {
 	var errs []error
@@ -194,7 +204,15 @@ func (c *Config) validate() error {
 		}
 		msmNames[m.Name] = true
 		if !validMeasurementTypes[m.Type] {
-			errs = append(errs, fmt.Errorf("measurement %q: unknown type %q (must be dns, ping, tls, traceroute)", m.Name, m.Type))
+			errs = append(errs, fmt.Errorf("measurement %q: unknown type %q (must be dns, ping, tls, traceroute, http)", m.Name, m.Type))
+		}
+		if m.Type == TypeHTTP {
+			if m.HttpMethod != "" && !validHttpMethods[m.HttpMethod] {
+				errs = append(errs, fmt.Errorf("measurement %q: http_method %q must be GET, HEAD, or POST", m.Name, m.HttpMethod))
+			}
+			if m.HttpVersion != "" && !validHttpVersions[m.HttpVersion] {
+				errs = append(errs, fmt.Errorf("measurement %q: http_version %q must be \"1.0\" or \"1.1\"", m.Name, m.HttpVersion))
+			}
 		}
 		if m.Target == "" {
 			errs = append(errs, fmt.Errorf("measurement %q: target is required", m.Name))

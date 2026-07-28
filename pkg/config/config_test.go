@@ -202,7 +202,7 @@ measurements:
 			yaml: `
 measurements:
   - name: m
-    type: http
+    type: grpc
     target: x.com
     cohorts:
       - name: r
@@ -211,7 +211,61 @@ measurements:
         interval_seconds: 60
 `,
 			wantErr:     true,
-			errContains: `unknown type "http"`,
+			errContains: `unknown type "grpc"`,
+		},
+		{
+			name: "http measurement valid",
+			yaml: `
+measurements:
+  - name: m
+    type: http
+    target: x.com
+    af: 4
+    http_method: GET
+    http_path: /health
+    cohorts:
+      - name: r
+        probe_count: 10
+        max_probes_per_cell: 1
+        interval_seconds: 60
+`,
+			wantErr: false,
+		},
+		{
+			name: "http measurement invalid method",
+			yaml: `
+measurements:
+  - name: m
+    type: http
+    target: x.com
+    af: 4
+    http_method: DELETE
+    cohorts:
+      - name: r
+        probe_count: 10
+        max_probes_per_cell: 1
+        interval_seconds: 60
+`,
+			wantErr:     true,
+			errContains: `http_method "DELETE" must be GET, HEAD, or POST`,
+		},
+		{
+			name: "http measurement invalid version",
+			yaml: `
+measurements:
+  - name: m
+    type: http
+    target: x.com
+    af: 4
+    http_version: "2.0"
+    cohorts:
+      - name: r
+        probe_count: 10
+        max_probes_per_cell: 1
+        interval_seconds: 60
+`,
+			wantErr:     true,
+			errContains: `http_version "2.0" must be "1.0" or "1.1"`,
 		},
 		{
 			name: "measurement missing target",

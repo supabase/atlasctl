@@ -24,6 +24,21 @@ func NewApplyClient(apiKey string, verbose bool, codec plan.TagCodec) (*ApplyCli
 	return &ApplyClient{MsmClient: *msm}, nil
 }
 
+// httpOptsFromSpec converts the HTTP-specific fields on a MsmSpec into a
+// *goat.HttpOptions. Returns nil when all fields are zero (goat uses its own
+// defaults — default method HEAD, path "/", port 80).
+func httpOptsFromSpec(spec plan.MsmSpec) *goat.HttpOptions {
+	if spec.HttpMethod == "" && spec.HttpPath == "" && spec.HttpPort == 0 && spec.HttpVersion == "" {
+		return nil
+	}
+	return &goat.HttpOptions{
+		Method:  spec.HttpMethod,
+		Path:    spec.HttpPath,
+		Port:    spec.HttpPort,
+		Version: spec.HttpVersion,
+	}
+}
+
 // ValidateMsmSpec builds the goat measurement spec locally and calls GetApiJson
 // to check for structural errors without making any API call. Use this during
 // plan to surface spec problems before apply.
@@ -44,6 +59,8 @@ func ValidateMsmSpec(spec plan.MsmSpec) error {
 		defErr = ms.AddTls("validate", spec.Target, af, baseOpts, nil)
 	case plan.MsmTypeTraceroute:
 		defErr = ms.AddTrace("validate", spec.Target, af, baseOpts, nil)
+	case plan.MsmTypeHTTP:
+		defErr = ms.AddHttp("validate", spec.Target, af, baseOpts, httpOptsFromSpec(spec))
 	default:
 		return fmt.Errorf("unsupported measurement type %q", spec.Type)
 	}
@@ -96,6 +113,8 @@ func (c *ApplyClient) CreateMeasurement(ctx context.Context, spec plan.MsmSpec) 
 		defErr = ms.AddTls(desc, spec.Target, af, baseOpts, nil)
 	case plan.MsmTypeTraceroute:
 		defErr = ms.AddTrace(desc, spec.Target, af, baseOpts, nil)
+	case plan.MsmTypeHTTP:
+		defErr = ms.AddHttp(desc, spec.Target, af, baseOpts, httpOptsFromSpec(spec))
 	default:
 		return 0, fmt.Errorf("unsupported measurement type %q", spec.Type)
 	}
