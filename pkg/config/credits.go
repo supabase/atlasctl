@@ -22,6 +22,8 @@ func CreditsPerResult(t MeasurementType) int {
 		return 3
 	case TypeTraceroute:
 		return 30
+	case TypeHTTP:
+		return 10
 	default:
 		return 0
 	}

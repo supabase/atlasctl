@@ -19,6 +19,12 @@ type MsmSpec struct {
 	Interval  int
 	ProbeIDs  []uint32
 
+	// HTTP-only fields. Zero values are ignored; goat uses its own defaults.
+	HttpMethod  string
+	HttpPath    string
+	HttpPort    uint
+	HttpVersion string
+
 	// HourlyCredits and DailyCredits are the projected RIPE Atlas credit burn
 	// for this measurement. They are populated by DesiredState once ProbeIDs are
 	// known and are deterministic for a given (ProbeIDs, Type, Interval) triple.
@@ -104,13 +110,17 @@ func Apply(
 				Str("cohort", ch.Key.Cohort).
 				Msg("created measurement")
 			out.SetRecord(ch.Key.Name, ch.Key.Cohort, MsmRecord{
-				MsmID:     id,
-				Namespace: ch.Desired.Namespace,
-				Target:    ch.Desired.Target,
-				Type:      string(ch.Desired.Type),
-				AF:        ch.Desired.AF,
-				Interval:  ch.Desired.Interval,
-				ProbeIDs:  ch.Desired.ProbeIDs,
+				MsmID:       id,
+				Namespace:   ch.Desired.Namespace,
+				Target:      ch.Desired.Target,
+				Type:        string(ch.Desired.Type),
+				AF:          ch.Desired.AF,
+				Interval:    ch.Desired.Interval,
+				ProbeIDs:    ch.Desired.ProbeIDs,
+				HttpMethod:  ch.Desired.HttpMethod,
+				HttpPath:    ch.Desired.HttpPath,
+				HttpPort:    ch.Desired.HttpPort,
+				HttpVersion: ch.Desired.HttpVersion,
 			})
 
 		case ChangeStop:

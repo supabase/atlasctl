@@ -4,7 +4,7 @@ Declarative management of RIPE Atlas measurements for Supabase external edge tel
 
 ## Background
 
-[RIPE Atlas](https://atlas.ripe.net) is a global network of roughly 12,000 to 14,000 hardware probes distributed across ISPs worldwide. Each probe runs active measurements (DNS, ping, TLS, traceroute) and reports results in real time. Supabase uses RIPE Atlas to detect failures invisible from our own infrastructure: DNS resolution problems at specific ISPs, TCP/TLS reachability issues from particular networks, and regional outages that internal monitoring cannot see.
+[RIPE Atlas](https://atlas.ripe.net) is a global network of roughly 12,000 to 14,000 hardware probes distributed across ISPs worldwide. Each probe runs active measurements (DNS, ping, TLS, traceroute, HTTP) and reports results in real time. Supabase uses RIPE Atlas to detect failures invisible from our own infrastructure: DNS resolution problems at specific ISPs, TCP/TLS reachability issues from particular networks, and regional outages that internal monitoring cannot see.
 
 The operational challenge starts with probe selection. If you want a measurement with 50 to 200 probes, you have thousands of candidates. Picking them naively, or accepting whatever the API returns, tends to produce sets that cluster in Western Europe and North America, repeat the same ASNs, and include probes that go offline regularly. A useful measurement needs geographic spread across continental zones, ASN diversity so no single carrier dominates, and probes with a track record of stability.
 
@@ -313,7 +313,7 @@ Structural attributes (target, measurement type, interval, address family) are i
 | Existing measurement, no changes                 | No-op                  | No       |
 | Running measurement not in config                | Stop measurement       | No       |
 
-Credit costs per result: DNS/TLS = 10, Ping = 3, Traceroute = 30. One-off measurements cost 2x periodic.
+Credit costs per result: DNS/TLS/HTTP = 10, Ping = 3, Traceroute = 30. One-off measurements cost 2x periodic.
 
 ## State tracking
 
@@ -382,7 +382,7 @@ The providers use the same namespace, cohort, and probe selection model. Measure
 
 ## Constraints
 
-- No HTTP measurements. RIPE Atlas supports ping, DNS, TLS, traceroute, and NTP only.
+- HTTP measurements (plain HTTP 1.x only) are supported by atlasctl and the RIPE Atlas platform, but RIPE Atlas restricts HTTP measurement creation to researchers and other approved account tiers. Most API keys will receive a 403 when trying to schedule one. Use `tls` to test HTTPS reachability. The `http` type is available in config for accounts where the platform grants it.
 - Minimum measurement interval: 60 seconds per probe.
 - All RIPE Atlas measurements are publicly queryable by design.
 

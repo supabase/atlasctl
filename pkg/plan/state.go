@@ -36,6 +36,11 @@ type MsmRecord struct {
 	AF        int      `yaml:"af"`
 	Interval  int      `yaml:"interval"`
 	ProbeIDs  []uint32 `yaml:"probe_ids"`
+	// HTTP-only fields. Omitted for non-HTTP measurements.
+	HttpMethod  string `yaml:"http_method,omitempty"`
+	HttpPath    string `yaml:"http_path,omitempty"`
+	HttpPort    uint   `yaml:"http_port,omitempty"`
+	HttpVersion string `yaml:"http_version,omitempty"`
 }
 
 // NewStateFile returns an empty, initialised StateFile.

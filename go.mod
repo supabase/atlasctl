@@ -6,7 +6,7 @@ require (
 	github.com/ThingsIXFoundation/h3-light v0.0.0-20230404055559-b4bb7d4d9c47
 	github.com/gofrs/flock v0.13.0
 	github.com/google/uuid v1.6.0
-	github.com/robert-kisteleki/goat v0.8.1
+	github.com/robert-kisteleki/goat v0.9.0
 	github.com/rs/zerolog v1.35.1
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1

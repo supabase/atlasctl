@@ -23,11 +23,17 @@ For a conceptual walkthrough of how bands, cohorts, and continental coverage int
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `name` | string | yes | Unique identifier. Combined with cohort name to form the RIPE Atlas description tag |
-| `type` | string | yes | `dns`, `tls`, `ping`, or `traceroute` |
+| `type` | string | yes | `dns`, `tls`, `ping`, `traceroute`, or `http` |
 | `target` | string | yes | Hostname or IP address to measure |
 | `af` | int | no | Address family: 4 or 6. Defaults to the RIPE Atlas platform default |
 | `query_type` | string | no | DNS query type. DNS measurements only |
+| `http_method` | string | no | HTTP method: `GET`, `HEAD` (default), or `POST`. HTTP measurements only |
+| `http_path` | string | no | URL path. HTTP measurements only. Defaults to `/` |
+| `http_port` | int | no | TCP port. HTTP measurements only. Defaults to `80` |
+| `http_version` | string | no | HTTP version: `1.0` or `1.1`. HTTP measurements only |
 | `cohorts` | list | yes | The cohort tiers for this measurement |
+
+**Note on HTTP access.** RIPE Atlas restricts `http` measurement creation to researchers and other approved account tiers. Most API keys will receive a 403 from the RIPE Atlas API when apply runs. The `http` type is fully supported by atlasctl and the goat library for accounts where the platform grants it. Use `tls` to test HTTPS reachability without this restriction.
 
 ### Cohort fields
 

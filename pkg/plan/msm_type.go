@@ -8,4 +8,5 @@ const (
 	MsmTypePing       MsmType = "ping"
 	MsmTypeTLS        MsmType = "tls"
 	MsmTypeTraceroute MsmType = "traceroute"
+	MsmTypeHTTP       MsmType = "http"
 )
