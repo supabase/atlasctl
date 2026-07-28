@@ -93,7 +93,7 @@ func buildSingleCohort(t *testing.T, rawProbes []snapshot.Probe) []selection.Sel
 	}
 	cohort.Cfg.ScoringConfig = knownScoringCfg()
 
-	cohorts, err := selection.Select(context.Background(), probes, []config.MeasurementCohort{cohort}, selection.NewDefaultOrderer(3), 3)
+	cohorts, err := selection.Select(context.Background(), probes, []config.MeasurementCohort{cohort}, selection.NewDefaultOrderer())
 	require.NoError(t, err)
 	for i := range cohorts {
 		cohorts[i].Measurement = "test-msm"
@@ -164,7 +164,7 @@ func TestReport_MultipleCohorts(t *testing.T) {
 		{Name: "r2", ProbeCount: 5, MaxProbesPerCell: 5, IntervalSeconds: 60},
 	}
 
-	selected, err := selection.Select(context.Background(), probes, cohorts, selection.NewDefaultOrderer(3), 3)
+	selected, err := selection.Select(context.Background(), probes, cohorts, selection.NewDefaultOrderer())
 	require.NoError(t, err)
 
 	report := selection.Report(selected)

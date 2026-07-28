@@ -231,6 +231,7 @@ When multiple cohorts or measurements share the same scoring config, define name
 ```yaml
 cohort_configs:
   standard:
+    h3_resolution: 3   # state/province granularity (default — explicit here for clarity)
     asn:
       7018: 10
       7922: 8
@@ -263,15 +264,6 @@ measurements:
 ```
 
 If both `cfg_preset` and `cfg` appear on the same cohort, the inline `cfg` wins as a complete replacement. There is no field-level merging.
-
-### Global settings
-
-```yaml
-# H3 hexagonal grid resolution for geographic diversity (1-15, default 3).
-# Resolution 3 gives cells roughly the size of a state or province (~12,000 km²).
-geo_diversity:
-  h3_resolution: 3
-```
 
 ### Tag exclusions
 

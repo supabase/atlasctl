@@ -4,6 +4,7 @@ state: state.yaml
 cohort_configs:
   standard:
     disable_continental_shuffle: false
+    h3_resolution: 3
     exclude_tags:
       - broken
       - system-flakey-connection
@@ -106,5 +107,3 @@ measurements:
         interval_seconds: 900
         cfg_preset: latam-focus
 
-geo_diversity:
-  h3_resolution: 3

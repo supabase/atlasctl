@@ -15,7 +15,6 @@ For a conceptual walkthrough of how bands, cohorts, and continental coverage int
 | `namespace` | string | `atlasctl` | Namespace embedded in RIPE Atlas measurement descriptions and tags. Used to scope managed measurements and filter by ownership during drift detection |
 | `cohort_configs` | map | | Named `CohortCfg` presets for reuse across cohorts. Referenced via `cfg_preset` |
 | `measurements` | list | | The measurements atlasctl will manage |
-| `geo_diversity.h3_resolution` | int | 3 | H3 hexagonal cell resolution (1-15). Controls the geographic granularity of the per-cell probe cap |
 
 ### Measurement fields
 
@@ -57,7 +56,7 @@ The body of a `cfg` block or a named preset in `cohort_configs`:
 
 | Field | Type | Description |
 |---|---|---|
-| `exclude_tags` | list of string | Probes carrying any of these tags are skipped for this cohort. Takes priority over `include_probe_ids`. See [Tag exclusions](#tag-exclusions) |
+| `exclude_tags` | list of string | Probes carrying any of these tags are skipped during scored fill for this cohort. Has no effect on probes pinned via `include_probe_ids`. See [Tag exclusions](#tag-exclusions) |
 | `asn` | map of int to int | Per-ASN score weights. A probe whose ASN matches receives the specified weight added to its score |
 | `tags` | map of string to int | Per-tag score weights. Weights for all matching tags are summed |
 | `countries` | map of string to int | Per-country score weights. Two-letter ISO 3166-1 alpha-2 codes |
@@ -66,6 +65,7 @@ The body of a `cfg` block or a named preset in `cohort_configs`:
 | `band_thresholds.b` | int | Minimum score for Band B. Default: 8 |
 | `band_thresholds.c` | int | Minimum score for Band C. Default: 3 |
 | `cities` | list of CityConfig | City-specific score bonuses and H3 density overrides |
+| `h3_resolution` | int | H3 hexagonal cell resolution for this cohort (1-15). Default 3 when omitted or zero. See [H3 cell reference](#h3-cell-reference) |
 | `disable_continental_shuffle` | bool | If true, skips continental interleaving. Probes sort by (band, hash) only |
 
 ### CityConfig fields
@@ -187,7 +187,7 @@ H3 is Uber's hexagonal hierarchical spatial index. Each probe maps to a hexagona
 | 4 | ~1,770 km² | Metro area |
 | 5 | ~253 km² | City |
 
-`geo_diversity.h3_resolution` is global and applies to every cohort. The `density_coefficient` in a city's config scales the effective cap for cells within that city's radius. A coefficient of 2.0 allows twice as many probes per cell. A coefficient of 0.5 halves it.
+`h3_resolution` is per cohort in `CohortCfg` (default 3 when omitted or zero). Different cohorts within the same measurement can use different resolutions. The `density_coefficient` in a city's config scales the effective cap for cells within that city's radius. A coefficient of 2.0 allows twice as many probes per cell. A coefficient of 0.5 halves it.
 
 ## Continental zones
 

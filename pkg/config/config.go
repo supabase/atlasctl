@@ -19,21 +19,30 @@ type Config struct {
 	Namespace     string               `yaml:"namespace"`
 	CohortConfigs map[string]CohortCfg `yaml:"cohort_configs"`
 	Measurements  []Measurement        `yaml:"measurements"`
-	GeoDiversity  GeoConfig            `yaml:"geo_diversity"`
 }
 
 // CohortCfg is the full selection config for one cohort tier. It covers both
 // hard filtering (ExcludeTags) and soft scoring/ordering (ScoringConfig,
-// Cities, DisableContinentalShuffle). Named presets are defined in
-// Config.CohortConfigs.
+// Cities, DisableContinentalShuffle, H3Resolution). Named presets are defined
+// in Config.CohortConfigs.
 //
 // Cities covers both scoring bonuses (Score field) and H3 density coefficients
 // (DensityCoefficient field). Both are per-cohort preferences.
 type CohortCfg struct {
 	ScoringConfig             `yaml:",inline"`
 	ExcludeTags               []string     `yaml:"exclude_tags"`
+	H3Resolution              int          `yaml:"h3_resolution"`
 	Cities                    []CityConfig `yaml:"cities"`
 	DisableContinentalShuffle bool         `yaml:"disable_continental_shuffle"`
+}
+
+// EffectiveH3Resolution returns the configured H3 resolution, defaulting to 3
+// (state/province granularity, ~12,000 km² per cell) when unset.
+func (c CohortCfg) EffectiveH3Resolution() int {
+	if c.H3Resolution == 0 {
+		return 3
+	}
+	return c.H3Resolution
 }
 
 // CacheKey returns a stable hash of the cohort config suitable for use as a
@@ -118,11 +127,6 @@ type ScoringConfig struct {
 	BandThresholds BandThresholds `yaml:"band_thresholds"`
 }
 
-// GeoConfig controls geographic diversity parameters.
-type GeoConfig struct {
-	H3Resolution int `yaml:"h3_resolution"`
-}
-
 // CityConfig defines a city cluster with optional probe scoring and H3 cell capacity overrides.
 type CityConfig struct {
 	Name               string  `yaml:"name"`
@@ -151,9 +155,6 @@ func Load(path string) (*Config, error) {
 }
 
 func (c *Config) applyDefaults() {
-	if c.GeoDiversity.H3Resolution == 0 {
-		c.GeoDiversity.H3Resolution = 3
-	}
 	for i := range c.Measurements {
 		if c.Measurements[i].AF == 0 {
 			c.Measurements[i].AF = 4
@@ -251,12 +252,10 @@ func (c *Config) validate() error {
 			}
 			errs = append(errs, validateCities(cohort.Cfg.Cities,
 				fmt.Sprintf("measurement %q cohort %q", m.Name, cohort.Name))...)
+			if res := cohort.Cfg.H3Resolution; res != 0 && (res < 1 || res > 15) {
+				errs = append(errs, fmt.Errorf("measurement %q cohort %q: h3_resolution must be between 1 and 15, got %d", m.Name, cohort.Name, res))
+			}
 		}
-	}
-
-	res := c.GeoDiversity.H3Resolution
-	if res < 1 || res > 15 {
-		errs = append(errs, fmt.Errorf("geo_diversity.h3_resolution must be between 1 and 15, got %d", res))
 	}
 
 	return errors.Join(errs...)
