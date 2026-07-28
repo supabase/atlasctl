@@ -80,9 +80,9 @@ type ProbeOrderer func(probes *Probes, cfg config.CohortCfg) []snapshot.Probe
 // applies continental interleaving based on cfg.DisableContinentalShuffle.
 // Results are cached in memory per (probes.CacheKey(), cfg.CacheKey()).
 //
-// h3Resolution is closed over at construction time as global geographic config.
-func NewDefaultOrderer(h3Resolution int) ProbeOrderer {
-	_ = h3Resolution // reserved for future H3-based ordering knobs
+// Per-cohort H3 resolution is available via cfg.EffectiveH3Resolution() and
+// reserved for future H3-based ordering knobs.
+func NewDefaultOrderer() ProbeOrderer {
 	type cacheKey struct{ probes, cfg string }
 	cache := make(map[cacheKey][]snapshot.Probe)
 	w := NewDefaultWeighter()
@@ -135,10 +135,10 @@ func NewDefaultOrderer(h3Resolution int) ProbeOrderer {
 // Cohorts are processed in definition order. Each cohort depletes a shared
 // excluded set before the next cohort runs. IncludeProbeIDs are placed first
 // (up to ProbeCount) then the orderer fills remaining slots. ExcludeProbeIDs
-// are skipped silently throughout. Included probes bypass H3 cell capacity.
+// and ExcludeTags are applied during fill; IncludeProbeIDs bypass all exclusions.
 //
-// H3 cell capacity enforcement uses cohort.Cfg.Cities for per-cell density
-// coefficients. h3Resolution is the global geo_diversity setting.
+// H3 cell resolution and capacity enforcement use cohort.Cfg.EffectiveH3Resolution()
+// and cohort.Cfg.Cities respectively; both reset per cohort.
 //
 // probes must be closed before calling Select.
 func Select(
@@ -146,7 +146,6 @@ func Select(
 	probes *Probes,
 	cohorts []config.MeasurementCohort,
 	orderer ProbeOrderer,
-	h3Resolution int,
 ) ([]SelectedCohort, error) {
 	// Build a probe map by ID for O(1) IncludeProbeIDs lookup.
 	probeByID := make(map[uint32]snapshot.Probe, len(probes.Slice()))
@@ -174,9 +173,10 @@ func Select(
 		}
 
 		// Build per-cohort cell density coefficient map from cohort.Cfg.Cities.
+		h3Res := cohort.Cfg.EffectiveH3Resolution()
 		cellCoef := make(map[h3.Cell]float64)
 		for _, p := range probes.Slice() {
-			cell := h3.LatLonToCell(p.Lat, p.Lon, h3Resolution)
+			cell := h3.LatLonToCell(p.Lat, p.Lon, h3Res)
 			coef := maxCityCoef(p, cohort.Cfg.Cities)
 			if coef > cellCoef[cell] {
 				cellCoef[cell] = coef
@@ -216,7 +216,7 @@ func Select(
 				if HardExcluded(p, cohort.Cfg.ExcludeTags) {
 					continue
 				}
-				cell := h3.LatLonToCell(p.Lat, p.Lon, h3Resolution)
+				cell := h3.LatLonToCell(p.Lat, p.Lon, h3Res)
 				cap := cellCapacity(cohort.MaxProbesPerCell, cellCoef[cell])
 				if occ.Count(cell) >= cap {
 					continue

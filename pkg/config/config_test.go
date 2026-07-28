@@ -30,10 +30,10 @@ func TestLoad_ValidFixture(t *testing.T) {
 	require.NotNil(t, cfg)
 
 	assert.Len(t, cfg.Measurements, 3)
-	assert.Equal(t, 3, cfg.GeoDiversity.H3Resolution)
 
 	assert.Len(t, cfg.CohortConfigs, 2)
 	standard := cfg.CohortConfigs["standard"]
+	assert.Equal(t, 3, standard.H3Resolution)
 	assert.Len(t, standard.Cities, 2)
 	assert.False(t, standard.DisableContinentalShuffle)
 
@@ -82,7 +82,8 @@ func TestLoad(t *testing.T) {
 			name: "minimal valid",
 			yaml: minimalValid,
 			check: func(t *testing.T, cfg *config.Config) {
-				assert.Equal(t, 3, cfg.GeoDiversity.H3Resolution, "h3_resolution should default to 3")
+				cohort := cfg.Measurements[0].Cohorts[0]
+				assert.Equal(t, 3, cohort.Cfg.EffectiveH3Resolution(), "h3_resolution should default to 3")
 			},
 		},
 		{
@@ -268,6 +269,46 @@ measurements:
 			errContains: `http_version "2.0" must be "1.0" or "1.1"`,
 		},
 		{
+			name: "h3_resolution valid non-default",
+			yaml: `
+measurements:
+  - name: m
+    type: dns
+    target: x.com
+    af: 4
+    cohorts:
+      - name: r
+        probe_count: 10
+        max_probes_per_cell: 1
+        interval_seconds: 60
+        cfg:
+          h3_resolution: 5
+`,
+			wantErr: false,
+			check: func(t *testing.T, cfg *config.Config) {
+				assert.Equal(t, 5, cfg.Measurements[0].Cohorts[0].Cfg.H3Resolution)
+			},
+		},
+		{
+			name: "h3_resolution out of range",
+			yaml: `
+measurements:
+  - name: m
+    type: dns
+    target: x.com
+    af: 4
+    cohorts:
+      - name: r
+        probe_count: 10
+        max_probes_per_cell: 1
+        interval_seconds: 60
+        cfg:
+          h3_resolution: 16
+`,
+			wantErr:     true,
+			errContains: "h3_resolution must be between 1 and 15",
+		},
+		{
 			name: "measurement missing target",
 			yaml: `
 measurements:
@@ -294,13 +335,22 @@ measurements:
 			errContains: "at least one cohort is required",
 		},
 		{
-			name: "h3_resolution out of range high",
-			yaml: minimalValid + `
-geo_diversity:
-  h3_resolution: 16
+			name: "h3_resolution out of range low",
+			yaml: `
+measurements:
+  - name: m
+    type: dns
+    target: x.com
+    af: 4
+    cohorts:
+      - name: r
+        probe_count: 10
+        max_probes_per_cell: 1
+        interval_seconds: 60
+        cfg:
+          h3_resolution: 0
 `,
-			wantErr:     true,
-			errContains: "h3_resolution must be between 1 and 15",
+			wantErr: false,
 		},
 		{
 			name: "city density_coefficient between 0 and 1 is valid",

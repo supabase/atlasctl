@@ -57,7 +57,7 @@ func makeProbes(ps []snapshot.Probe) *selection.Probes {
 
 // defaultOrderer wraps NewDefaultOrderer at H3 resolution 3 for test convenience.
 func defaultOrderer() selection.ProbeOrderer {
-	return selection.NewDefaultOrderer(3)
+	return selection.NewDefaultOrderer()
 }
 
 // ── tests ─────────────────────────────────────────────────────────────────────
@@ -70,7 +70,7 @@ func TestSelect_NoOverlap(t *testing.T) {
 		minimalCohort("r3", 20, 2),
 	}
 
-	result, err := selection.Select(context.Background(), probes, cohorts, defaultOrderer(), 3)
+	result, err := selection.Select(context.Background(), probes, cohorts, defaultOrderer())
 	require.NoError(t, err)
 	require.Len(t, result, 3)
 
@@ -94,9 +94,9 @@ func TestSelect_Determinism(t *testing.T) {
 
 	// Use the same orderer for both runs to exercise the cache on the second run.
 	ord := defaultOrderer()
-	r1, err := selection.Select(context.Background(), probes, cohorts, ord, 3)
+	r1, err := selection.Select(context.Background(), probes, cohorts, ord)
 	require.NoError(t, err)
-	r2, err := selection.Select(context.Background(), probes, cohorts, ord, 3)
+	r2, err := selection.Select(context.Background(), probes, cohorts, ord)
 	require.NoError(t, err)
 
 	require.Len(t, r2, len(r1))
@@ -141,7 +141,7 @@ func TestSelect_H3Limit(t *testing.T) {
 		minimalCohort("r2", 5, 1),
 	}
 
-	result, err := selection.Select(context.Background(), probes, cohorts, defaultOrderer(), 3)
+	result, err := selection.Select(context.Background(), probes, cohorts, defaultOrderer())
 	require.NoError(t, err)
 	require.Len(t, result, 2)
 
@@ -186,7 +186,7 @@ func TestSelect_CityDensityReduction(t *testing.T) {
 	cohort := minimalCohort("r1", 5, 4) // base cap=4, city reduces to ceil(4*0.5)=2
 	cohort.Cfg.Cities = []config.CityConfig{city}
 
-	result, err := selection.Select(context.Background(), makeProbes(rawProbes), []config.MeasurementCohort{cohort}, defaultOrderer(), 3)
+	result, err := selection.Select(context.Background(), makeProbes(rawProbes), []config.MeasurementCohort{cohort}, defaultOrderer())
 	require.NoError(t, err)
 	require.Len(t, result, 1)
 
@@ -224,7 +224,7 @@ func TestSelect_CityDensityIncrease(t *testing.T) {
 	cohort := minimalCohort("r1", 5, 1) // base cap=1, city raises to ceil(1*3.0)=3
 	cohort.Cfg.Cities = []config.CityConfig{city}
 
-	result, err := selection.Select(context.Background(), makeProbes(rawProbes), []config.MeasurementCohort{cohort}, defaultOrderer(), 3)
+	result, err := selection.Select(context.Background(), makeProbes(rawProbes), []config.MeasurementCohort{cohort}, defaultOrderer())
 	require.NoError(t, err)
 	require.Len(t, result, 1)
 
@@ -261,7 +261,7 @@ func TestSelect_CityDensityIsPerCohort(t *testing.T) {
 	// Cohort 2: no city config → default cap=1 applies.
 	c2 := minimalCohort("sparse", 5, 1)
 
-	result, err := selection.Select(context.Background(), probes, []config.MeasurementCohort{c1, c2}, defaultOrderer(), 3)
+	result, err := selection.Select(context.Background(), probes, []config.MeasurementCohort{c1, c2}, defaultOrderer())
 	require.NoError(t, err)
 	require.Len(t, result, 2)
 
@@ -310,7 +310,7 @@ func TestSelect_CityScore(t *testing.T) {
 	cohort := minimalCohort("r1", 5, 1)
 	cohort.Cfg.Cities = []config.CityConfig{city}
 
-	result, err := selection.Select(context.Background(), makeProbes(rawProbes), []config.MeasurementCohort{cohort}, defaultOrderer(), 3)
+	result, err := selection.Select(context.Background(), makeProbes(rawProbes), []config.MeasurementCohort{cohort}, defaultOrderer())
 	require.NoError(t, err)
 	require.Len(t, result, 1)
 	require.Len(t, result[0].Probes, 5)
@@ -340,7 +340,7 @@ func TestSelect_HardExclusion(t *testing.T) {
 	cohort := minimalCohort("r1", 10, 5)
 	cohort.Cfg.ExcludeTags = []string{"broken", "system-flakey-power"}
 
-	result, err := selection.Select(context.Background(), probes, []config.MeasurementCohort{cohort}, defaultOrderer(), 3)
+	result, err := selection.Select(context.Background(), probes, []config.MeasurementCohort{cohort}, defaultOrderer())
 	require.NoError(t, err)
 	require.Len(t, result, 1)
 
@@ -358,7 +358,7 @@ func TestSelect_ExcludeProbeIDs(t *testing.T) {
 	cohort := minimalCohort("r1", 10, 5)
 	cohort.ExcludeProbeIDs = []uint32{1, 2, 3}
 
-	result, err := selection.Select(context.Background(), probes, []config.MeasurementCohort{cohort}, defaultOrderer(), 3)
+	result, err := selection.Select(context.Background(), probes, []config.MeasurementCohort{cohort}, defaultOrderer())
 	require.NoError(t, err)
 	require.Len(t, result, 1)
 
@@ -377,7 +377,7 @@ func TestSelect_IncludeProbeIDs(t *testing.T) {
 	cohort := minimalCohort("r1", 5, 1)
 	cohort.IncludeProbeIDs = []uint32{5, 6} // guaranteed to appear in results
 
-	result, err := selection.Select(context.Background(), probes, []config.MeasurementCohort{cohort}, defaultOrderer(), 3)
+	result, err := selection.Select(context.Background(), probes, []config.MeasurementCohort{cohort}, defaultOrderer())
 	require.NoError(t, err)
 	require.Len(t, result, 1)
 	require.Len(t, result[0].Probes, 5)
@@ -412,7 +412,7 @@ func TestSelect_IncludeBypassesH3Cap(t *testing.T) {
 	cohort := minimalCohort("r1", 5, 1) // cap=1 per cell
 	cohort.IncludeProbeIDs = []uint32{1, 2}
 
-	result, err := selection.Select(context.Background(), makeProbes(clusterProbes), []config.MeasurementCohort{cohort}, defaultOrderer(), 3)
+	result, err := selection.Select(context.Background(), makeProbes(clusterProbes), []config.MeasurementCohort{cohort}, defaultOrderer())
 	require.NoError(t, err)
 	require.Len(t, result, 1)
 
@@ -446,7 +446,7 @@ func TestSelect_IncludeOverridesExclusions(t *testing.T) {
 	cohort2.ExcludeProbeIDs = []uint32{1}
 	cohort2.Cfg.ExcludeTags = []string{"starlink"}
 
-	result, err := selection.Select(context.Background(), probes, []config.MeasurementCohort{cohort1, cohort2}, defaultOrderer(), 3)
+	result, err := selection.Select(context.Background(), probes, []config.MeasurementCohort{cohort1, cohort2}, defaultOrderer())
 	require.NoError(t, err)
 	require.Len(t, result, 2)
 
@@ -466,7 +466,7 @@ func TestSelect_SmallSnapshot(t *testing.T) {
 		minimalCohort("r2", 10, 5), // r1 consumed all 5; r2 gets 0
 	}
 
-	result, err := selection.Select(context.Background(), probes, cohorts, defaultOrderer(), 3)
+	result, err := selection.Select(context.Background(), probes, cohorts, defaultOrderer())
 	require.NoError(t, err)
 	require.Len(t, result, 2)
 
@@ -484,7 +484,7 @@ func TestSelect_ContextCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // already cancelled
 
-	_, err := selection.Select(ctx, probes, cohorts, defaultOrderer(), 3)
+	_, err := selection.Select(ctx, probes, cohorts, defaultOrderer())
 	assert.ErrorIs(t, err, context.Canceled)
 }
 
@@ -496,7 +496,7 @@ func TestSelect_GeoJSON(t *testing.T) {
 	probes := makeProbes(rawProbes)
 	cohorts := []config.MeasurementCohort{minimalCohort("r1", 10, 5)}
 
-	result, err := selection.Select(context.Background(), probes, cohorts, defaultOrderer(), 3)
+	result, err := selection.Select(context.Background(), probes, cohorts, defaultOrderer())
 	require.NoError(t, err)
 	require.Len(t, result, 1)
 
@@ -571,7 +571,7 @@ func TestSelect_ContinentalInterleaving(t *testing.T) {
 		ASN: map[uint32]int{7018: 10},
 	}
 
-	result, err := selection.Select(context.Background(), makeProbes(rawProbes), []config.MeasurementCohort{cohort}, defaultOrderer(), 3)
+	result, err := selection.Select(context.Background(), makeProbes(rawProbes), []config.MeasurementCohort{cohort}, defaultOrderer())
 	require.NoError(t, err)
 	require.Len(t, result, 1)
 	require.Len(t, result[0].Probes, 6, "cohort should fill to count=6")
@@ -618,10 +618,10 @@ func TestSelect_DisableContinentalShuffle(t *testing.T) {
 	noShuffle.Cfg.ScoringConfig = scoring
 	noShuffle.Cfg.DisableContinentalShuffle = true
 
-	rShuffled, err := selection.Select(context.Background(), probes, []config.MeasurementCohort{shuffled}, defaultOrderer(), 3)
+	rShuffled, err := selection.Select(context.Background(), probes, []config.MeasurementCohort{shuffled}, defaultOrderer())
 	require.NoError(t, err)
 
-	rNoShuffle, err := selection.Select(context.Background(), probes, []config.MeasurementCohort{noShuffle}, defaultOrderer(), 3)
+	rNoShuffle, err := selection.Select(context.Background(), probes, []config.MeasurementCohort{noShuffle}, defaultOrderer())
 	require.NoError(t, err)
 
 	naShuffled, euShuffled := 0, 0
@@ -658,10 +658,10 @@ func TestSelect_OrdererCacheHit(t *testing.T) {
 
 	ord := defaultOrderer()
 
-	r1, err := selection.Select(context.Background(), probes, cohorts, ord, 3)
+	r1, err := selection.Select(context.Background(), probes, cohorts, ord)
 	require.NoError(t, err)
 
-	r2, err := selection.Select(context.Background(), probes, cohorts, ord, 3)
+	r2, err := selection.Select(context.Background(), probes, cohorts, ord)
 	require.NoError(t, err)
 
 	require.Equal(t, len(r1[0].Probes), len(r2[0].Probes))
@@ -698,8 +698,8 @@ func BenchmarkSelect(b *testing.B) {
 	b.ResetTimer()
 	for range b.N {
 		// New orderer each iteration to include scoring cost in the measurement.
-		ord := selection.NewDefaultOrderer(3)
-		_, err := selection.Select(ctx, probes, cohorts, ord, 3)
+		ord := selection.NewDefaultOrderer()
+		_, err := selection.Select(ctx, probes, cohorts, ord)
 		if err != nil {
 			b.Fatal(err)
 		}

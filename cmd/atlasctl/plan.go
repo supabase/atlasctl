@@ -23,10 +23,10 @@ func selectAll(ctx context.Context, probeList []snapshot.Probe, cfg config.Confi
 	}
 	probes.Close()
 
-	orderer := selection.NewDefaultOrderer(cfg.GeoDiversity.H3Resolution)
+	orderer := selection.NewDefaultOrderer()
 	allSelected := make(map[string][]selection.SelectedCohort, len(cfg.Measurements))
 	for _, msm := range cfg.Measurements {
-		selected, err := selection.Select(ctx, probes, msm.Cohorts, orderer, cfg.GeoDiversity.H3Resolution)
+		selected, err := selection.Select(ctx, probes, msm.Cohorts, orderer)
 		if err != nil {
 			return nil, err
 		}
