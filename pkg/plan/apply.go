@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/rs/zerolog"
+
+	"github.com/supabase/atlasctl/pkg/config"
 )
 
 // MsmSpec carries the information needed to create one RIPE Atlas measurement.
@@ -24,6 +26,10 @@ type MsmSpec struct {
 	HttpPath    string
 	HttpPort    uint
 	HttpVersion string
+
+	// Options are the optional per-type and common fields from config. Zero
+	// values are omitted from the API request.
+	Options config.MsmOptions
 
 	// HourlyCredits and DailyCredits are the projected RIPE Atlas credit burn
 	// for this measurement. They are populated by DesiredState once ProbeIDs are
@@ -121,6 +127,7 @@ func Apply(
 				HttpPath:    ch.Desired.HttpPath,
 				HttpPort:    ch.Desired.HttpPort,
 				HttpVersion: ch.Desired.HttpVersion,
+				Options:     ch.Desired.Options,
 			})
 
 		case ChangeStop:

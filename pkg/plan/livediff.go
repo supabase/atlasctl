@@ -274,13 +274,16 @@ func LiveDiff(
 }
 
 // nonNamespaceStructuralChange reports whether rec and want differ on any
-// immutable attribute other than namespace (target, type, af, interval).
+// immutable attribute other than namespace (target, type, af, interval,
+// options, and the HTTP fields for HTTP measurements).
 // Used to distinguish a namespace-only false positive from a real structural change.
 func nonNamespaceStructuralChange(rec MsmRecord, want MsmSpec) bool {
 	return rec.Target != want.Target ||
 		MsmType(rec.Type) != want.Type ||
 		rec.AF != want.AF ||
-		rec.Interval != want.Interval
+		rec.Interval != want.Interval ||
+		rec.Options != want.Options ||
+		(want.Type == MsmTypeHTTP && httpFieldsDiffer(rec, want))
 }
 
 // cancelStopCreate removes the ChangeStop and ChangeCreate for key from cs and

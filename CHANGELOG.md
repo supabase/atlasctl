@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Per-measurement option blocks (`common`, `ping`, `traceroute`, `dns`, `tls`, `http`) exposing the RIPE Atlas fields that goat supports, including `resolve_on_probe`, `spread`, TLS `hostname` and `port`, traceroute `protocol`, and DNS flags. `MsmSpec.Options` and the state file record them, and a changed option triggers stop+create
+
+### Fixed
+
+- DNS measurements always used query type `A`; `query_type` from config is now sent to the API. Existing DNS measurements configured with another `query_type` are recreated on the next apply
+- Live diff no longer cancels a namespace only stop+create when an option or HTTP field also changed
+
 ## [0.1.4] - 2026-07-28
 
 ### Added

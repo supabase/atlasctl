@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/supabase/atlasctl/pkg/config"
 )
 
 // ErrStateNotFound is returned by LoadState when the state file does not exist.
@@ -41,6 +43,10 @@ type MsmRecord struct {
 	HttpPath    string `yaml:"http_path,omitempty"`
 	HttpPort    uint   `yaml:"http_port,omitempty"`
 	HttpVersion string `yaml:"http_version,omitempty"`
+	// Options are the optional per-type and common fields the measurement was
+	// created with. Omitted on records written before options were tracked,
+	// which read back as the zero value (no options set).
+	Options config.MsmOptions `yaml:"options,omitempty"`
 }
 
 // NewStateFile returns an empty, initialised StateFile.
