@@ -71,7 +71,7 @@ measurements:
 | `auto_topup_prb_similarity` | float | Similarity of the replacement probe, between 0 and 1 |
 | `start_time` | string | RFC 3339 start time |
 | `stop_time` | string | RFC 3339 stop time. Must be after `start_time` |
-| `bill_to` | string | Bill another account that has allowed you to |
+| `bill_to` | string | Charge credits to another RIPE Atlas account instead of your own. That account must have added you to its allowed billing list |
 
 A measurement that reaches its `stop_time` ends on its own. The next `apply` sees it missing and tries to create it again with a stop time that has already passed, which is unlikely to be accepted. Remove `stop_time` or the measurement from the config when it ends.
 
@@ -80,22 +80,22 @@ A measurement that reaches its `stop_time` ends on its own. The next `apply` see
 | Field | Type | Description |
 |---|---|---|
 | `packets` | int | Packets per result. Platform default 3 |
-| `packet_interval` | int | Milliseconds between packets |
-| `include_probe_id` | bool | Include the probe ID in the payload |
+| `packet_interval` | int | Milliseconds between the packets of one result |
+| `include_probe_id` | bool | Put the probe ID (as ASCII digits) in the packet payload |
 
 #### `traceroute`
 
 | Field | Type | Description |
 |---|---|---|
 | `protocol` | string | `ICMP`, `UDP`, or `TCP`. atlasctl defaults to `UDP`, the platform default is `ICMP` |
-| `response_timeout` | int | Milliseconds to wait for a response |
-| `packets` | int | Packets per hop |
-| `paris` | int | Paris traceroute variation |
-| `first_hop` | int | First TTL |
-| `max_hops` | int | Last TTL |
-| `destination_option_size` | int | IPv6 destination options header size |
-| `hop_by_hop_option_size` | int | IPv6 hop by hop options header size |
-| `dont_fragment` | bool | Set the don't fragment bit |
+| `response_timeout` | int | Milliseconds to wait for a reply to each packet. Platform default 4000 |
+| `packets` | int | Packets sent per hop. Platform default 3 |
+| `paris` | int | Number of distinct flow identifiers to cycle through, so that load balanced paths are explored consistently (Paris traceroute). Platform default 16 |
+| `first_hop` | int | TTL of the first hop probed. Platform default 1 |
+| `max_hops` | int | TTL of the last hop probed. Platform default 32 |
+| `destination_option_size` | int | Size in bytes of an IPv6 destination options extension header added to each packet. Platform default 0 (none) |
+| `hop_by_hop_option_size` | int | Size in bytes of an IPv6 hop by hop options extension header added to each packet. Platform default 0 (none) |
+| `dont_fragment` | bool | Set the don't fragment bit on outgoing packets. Platform default false |
 
 #### `dns`
 
@@ -106,15 +106,15 @@ The target is sent as the query argument and the probe's own resolver is always 
 | `query_type` | string | Record type such as `A` (default), `AAAA`, `NS`, `MX`, `TXT`. Takes priority over the flat `query_type` key, and the two must agree if both are set |
 | `query_class` | string | `IN` (default) or `CHAOS` |
 | `protocol` | string | `UDP` (default) or `TCP` |
-| `use_macros` | bool | Expand `$p`, `$r` and `$t` in the query argument |
-| `set_nsid_bit` | bool | Request the NSID option |
-| `include_qbuf` | bool | Include the query buffer in results |
-| `prepend_probe_id` | bool | Prefix the query with the probe ID |
+| `use_macros` | bool | Expand `$p` (probe ID), `$r` (random string) and `$t` (timestamp) in the target, for example to build unique names that bypass resolver caches |
+| `set_nsid_bit` | bool | Ask the server to identify itself with the EDNS NSID option (RFC 5001), commonly used to see which anycast instance answered |
+| `include_qbuf` | bool | Include the query packet sent by the probe in each result |
+| `prepend_probe_id` | bool | Prefix the queried name with the probe ID, giving a unique name per probe |
 | `set_rd_bit` | bool | Set the recursion desired bit |
 | `set_do_bit` | bool | Set the DNSSEC OK bit |
-| `udp_payload_size` | int | EDNS0 UDP payload size |
-| `retry` | int | Retries per query |
-| `timeout` | int | Milliseconds before a query times out |
+| `udp_payload_size` | int | Maximum UDP response size in bytes advertised through EDNS0. Platform default 512 |
+| `retry` | int | Number of times a query is retried after a failure. Platform default 0 |
+| `timeout` | int | Milliseconds to wait for a response before the query counts as failed. Platform default 5000 |
 
 #### `tls`
 
@@ -129,10 +129,10 @@ These extend the flat `http_*` keys above.
 
 | Field | Type | Description |
 |---|---|---|
-| `query_string` | string | Query string appended to the path |
-| `header_bytes` | int | Bytes of response headers to read |
-| `extended_timing` | bool | Report extended timing |
-| `more_extended_timing` | bool | Report more extended timing |
+| `query_string` | string | Query string appended to the request path (without the leading `?`) |
+| `header_bytes` | int | Maximum number of response header bytes to record in the result |
+| `extended_timing` | bool | Report additional timing detail in each result (for example time to resolve and time to first byte) |
+| `more_extended_timing` | bool | Report even more timing detail than `extended_timing` |
 
 #### Platform fields not yet supported
 

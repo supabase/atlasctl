@@ -11,78 +11,147 @@ import (
 //
 // MsmOptions is comparable with ==, and is also stored in the state file, so
 // that a change to any option is detected as a structural change.
+//
+// Field doc comments are kept in step with docs/selection-reference.md.
 type MsmOptions struct {
-	Common     CommonOptions `yaml:"common,omitempty"`
-	Ping       PingOptions   `yaml:"ping,omitempty"`
-	Traceroute TraceOptions  `yaml:"traceroute,omitempty"`
-	DNS        DNSOptions    `yaml:"dns,omitempty"`
-	TLS        TLSOptions    `yaml:"tls,omitempty"`
-	HTTP       HTTPOptions   `yaml:"http,omitempty"`
+	// Common options apply to every measurement type.
+	Common CommonOptions `yaml:"common,omitempty"`
+	// Ping options are valid only on ping measurements.
+	Ping PingOptions `yaml:"ping,omitempty"`
+	// Traceroute options are valid only on traceroute measurements.
+	Traceroute TraceOptions `yaml:"traceroute,omitempty"`
+	// DNS options are valid only on dns measurements.
+	DNS DNSOptions `yaml:"dns,omitempty"`
+	// TLS options are valid only on tls measurements.
+	TLS TLSOptions `yaml:"tls,omitempty"`
+	// HTTP options are valid only on http measurements.
+	HTTP HTTPOptions `yaml:"http,omitempty"`
 }
 
 // CommonOptions apply to every measurement type.
 type CommonOptions struct {
-	ResolveOnProbe      bool    `yaml:"resolve_on_probe,omitempty"`
-	Spread              uint    `yaml:"spread,omitempty"` // seconds over which probe start times are spread
-	SkipDNSCheck        bool    `yaml:"skip_dns_check,omitempty"`
-	TargetUpdateHours   uint    `yaml:"target_update_hours,omitempty"` // re-resolve the target every N hours
-	AutoTopup           bool    `yaml:"auto_topup,omitempty"`
-	AutoTopupDaysOff    uint    `yaml:"auto_topup_prb_days_off,omitempty"`
-	AutoTopupSimilarity float64 `yaml:"auto_topup_prb_similarity,omitempty"` // 0..1
-	StartTime           string  `yaml:"start_time,omitempty"`                // RFC 3339
-	StopTime            string  `yaml:"stop_time,omitempty"`                 // RFC 3339
-	BillTo              string  `yaml:"bill_to,omitempty"`
+	// ResolveOnProbe resolves the target on each probe instead of once centrally.
+	ResolveOnProbe bool `yaml:"resolve_on_probe,omitempty"`
+	// Spread is the number of seconds over which probe start times are spread
+	// within one interval.
+	Spread uint `yaml:"spread,omitempty"`
+	// SkipDNSCheck skips the platform's DNS check of the target at creation time.
+	SkipDNSCheck bool `yaml:"skip_dns_check,omitempty"`
+	// TargetUpdateHours re-resolves the target every N hours.
+	TargetUpdateHours uint `yaml:"target_update_hours,omitempty"`
+	// AutoTopup replaces probes that go offline. Implied by AutoTopupDaysOff
+	// and AutoTopupSimilarity.
+	AutoTopup bool `yaml:"auto_topup,omitempty"`
+	// AutoTopupDaysOff is the number of days a probe is offline before it is replaced.
+	AutoTopupDaysOff uint `yaml:"auto_topup_prb_days_off,omitempty"`
+	// AutoTopupSimilarity is how similar a replacement probe must be, between 0 and 1.
+	AutoTopupSimilarity float64 `yaml:"auto_topup_prb_similarity,omitempty"`
+	// StartTime is the measurement start time, RFC 3339.
+	StartTime string `yaml:"start_time,omitempty"`
+	// StopTime is the measurement stop time, RFC 3339. Must be after StartTime.
+	StopTime string `yaml:"stop_time,omitempty"`
+	// BillTo charges credits to another RIPE Atlas account instead of your own.
+	// That account must have added you to its allowed billing list.
+	BillTo string `yaml:"bill_to,omitempty"`
 }
 
 // PingOptions are ping-only fields.
 type PingOptions struct {
-	Packets        uint `yaml:"packets,omitempty"`         // API default 3
-	PacketInterval uint `yaml:"packet_interval,omitempty"` // ms between packets
+	// Packets is the number of packets per result. Platform default 3.
+	Packets uint `yaml:"packets,omitempty"`
+	// PacketInterval is the number of milliseconds between the packets of one result.
+	PacketInterval uint `yaml:"packet_interval,omitempty"`
+	// IncludeProbeID puts the probe ID (as ASCII digits) in the packet payload.
 	IncludeProbeID bool `yaml:"include_probe_id,omitempty"`
 }
 
 // TraceOptions are traceroute-only fields.
 type TraceOptions struct {
-	Protocol           string `yaml:"protocol,omitempty"` // ICMP, UDP (atlasctl default), TCP
-	ResponseTimeout    uint   `yaml:"response_timeout,omitempty"`
-	Packets            uint   `yaml:"packets,omitempty"`
-	Paris              uint   `yaml:"paris,omitempty"`
-	FirstHop           uint   `yaml:"first_hop,omitempty"`
-	MaxHops            uint   `yaml:"max_hops,omitempty"`
-	DestinationOptSize uint   `yaml:"destination_option_size,omitempty"`
-	HopByHopOptSize    uint   `yaml:"hop_by_hop_option_size,omitempty"`
-	DontFragment       bool   `yaml:"dont_fragment,omitempty"`
+	// Protocol is ICMP, UDP or TCP. atlasctl defaults to UDP; the platform
+	// default is ICMP.
+	Protocol string `yaml:"protocol,omitempty"`
+	// ResponseTimeout is the number of milliseconds to wait for a reply to each
+	// packet. Platform default 4000.
+	ResponseTimeout uint `yaml:"response_timeout,omitempty"`
+	// Packets is the number of packets sent per hop. Platform default 3.
+	Packets uint `yaml:"packets,omitempty"`
+	// Paris is the number of distinct flow identifiers to cycle through, so that
+	// load balanced paths are explored consistently (Paris traceroute). Platform
+	// default 16.
+	Paris uint `yaml:"paris,omitempty"`
+	// FirstHop is the TTL of the first hop probed. Platform default 1.
+	FirstHop uint `yaml:"first_hop,omitempty"`
+	// MaxHops is the TTL of the last hop probed. Platform default 32.
+	MaxHops uint `yaml:"max_hops,omitempty"`
+	// DestinationOptSize is the size in bytes of an IPv6 destination options
+	// extension header added to each packet. Platform default 0 (none).
+	DestinationOptSize uint `yaml:"destination_option_size,omitempty"`
+	// HopByHopOptSize is the size in bytes of an IPv6 hop by hop options
+	// extension header added to each packet. Platform default 0 (none).
+	HopByHopOptSize uint `yaml:"hop_by_hop_option_size,omitempty"`
+	// DontFragment sets the don't fragment bit on outgoing packets. Platform
+	// default false.
+	DontFragment bool `yaml:"dont_fragment,omitempty"`
 }
 
 // DNSOptions are DNS-only fields. The query argument is the measurement target
 // and the probe's own resolver is always used.
 type DNSOptions struct {
-	QueryType      string `yaml:"query_type,omitempty"`  // A (default), AAAA, NS, MX, ...
-	QueryClass     string `yaml:"query_class,omitempty"` // IN (default), CHAOS
-	Protocol       string `yaml:"protocol,omitempty"`    // UDP (default), TCP
-	UseMacros      bool   `yaml:"use_macros,omitempty"`
-	SetNSIDBit     bool   `yaml:"set_nsid_bit,omitempty"`
-	IncludeQbuf    bool   `yaml:"include_qbuf,omitempty"`
-	PrependProbeID bool   `yaml:"prepend_probe_id,omitempty"`
-	SetRDBit       bool   `yaml:"set_rd_bit,omitempty"`
-	SetDOBit       bool   `yaml:"set_do_bit,omitempty"`
-	UDPPayloadSize uint   `yaml:"udp_payload_size,omitempty"`
-	Retry          uint   `yaml:"retry,omitempty"`
-	Timeout        uint   `yaml:"timeout,omitempty"` // ms
+	// QueryType is the record type: A (default), AAAA, NS, MX, TXT, and so on.
+	// Takes priority over the flat query_type key; the two must agree if both
+	// are set.
+	QueryType string `yaml:"query_type,omitempty"`
+	// QueryClass is IN (default) or CHAOS.
+	QueryClass string `yaml:"query_class,omitempty"`
+	// Protocol is UDP (default) or TCP.
+	Protocol string `yaml:"protocol,omitempty"`
+	// UseMacros expands $p (probe ID), $r (random string) and $t (timestamp) in
+	// the target, for example to build unique names that bypass resolver caches.
+	UseMacros bool `yaml:"use_macros,omitempty"`
+	// SetNSIDBit asks the server to identify itself with the EDNS NSID option
+	// (RFC 5001), commonly used to see which anycast instance answered.
+	SetNSIDBit bool `yaml:"set_nsid_bit,omitempty"`
+	// IncludeQbuf includes the query packet sent by the probe in each result.
+	IncludeQbuf bool `yaml:"include_qbuf,omitempty"`
+	// PrependProbeID prefixes the queried name with the probe ID, giving a
+	// unique name per probe.
+	PrependProbeID bool `yaml:"prepend_probe_id,omitempty"`
+	// SetRDBit sets the recursion desired bit.
+	SetRDBit bool `yaml:"set_rd_bit,omitempty"`
+	// SetDOBit sets the DNSSEC OK bit.
+	SetDOBit bool `yaml:"set_do_bit,omitempty"`
+	// UDPPayloadSize is the maximum UDP response size in bytes advertised
+	// through EDNS0. Platform default 512.
+	UDPPayloadSize uint `yaml:"udp_payload_size,omitempty"`
+	// Retry is the number of times a query is retried after a failure. Platform
+	// default 0.
+	Retry uint `yaml:"retry,omitempty"`
+	// Timeout is the number of milliseconds to wait for a response before the
+	// query counts as failed. Platform default 5000.
+	Timeout uint `yaml:"timeout,omitempty"`
 }
 
 // TLSOptions are TLS (sslcert) only fields.
 type TLSOptions struct {
-	Port     uint   `yaml:"port,omitempty"`     // API default 443
-	Hostname string `yaml:"hostname,omitempty"` // SNI
+	// Port is the TCP port. Platform default 443.
+	Port uint `yaml:"port,omitempty"`
+	// Hostname is the server name sent as SNI. Useful when the target is an IP
+	// address.
+	Hostname string `yaml:"hostname,omitempty"`
 }
 
 // HTTPOptions are HTTP fields in addition to the flat http_* keys on Measurement.
 type HTTPOptions struct {
-	QueryString        string `yaml:"query_string,omitempty"`
-	HeaderBytes        uint   `yaml:"header_bytes,omitempty"`
-	ExtendedTiming     bool   `yaml:"extended_timing,omitempty"`
-	MoreExtendedTiming bool   `yaml:"more_extended_timing,omitempty"`
+	// QueryString is appended to the request path (without the leading "?").
+	QueryString string `yaml:"query_string,omitempty"`
+	// HeaderBytes is the maximum number of response header bytes to record in
+	// the result.
+	HeaderBytes uint `yaml:"header_bytes,omitempty"`
+	// ExtendedTiming reports additional timing detail in each result (for
+	// example time to resolve and time to first byte).
+	ExtendedTiming bool `yaml:"extended_timing,omitempty"`
+	// MoreExtendedTiming reports even more timing detail than ExtendedTiming.
+	MoreExtendedTiming bool `yaml:"more_extended_timing,omitempty"`
 }
 
 var (

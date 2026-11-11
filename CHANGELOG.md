@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- Clearer descriptions, units and platform defaults for the measurement option fields, in `docs/selection-reference.md` and as doc comments on the option structs
+
 ## [0.2.0] - 2026-11-10
 
 ### Added
