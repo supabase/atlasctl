@@ -4,9 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-11
+
 ### Changed
 
-- Clearer descriptions, units and platform defaults for the measurement option fields, in `docs/selection-reference.md` and as doc comments on the option structs
+- Clearer descriptions, units and platform defaults for the measurement option fields, in `docs/selection-reference.md` and as doc comments on the option structs ([#41](https://github.com/supabase/atlasctl/pull/41))
 
 ## [0.2.0] - 2026-11-10
 
