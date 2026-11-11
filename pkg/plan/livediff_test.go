@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/supabase/atlasctl/pkg/config"
 	"github.com/supabase/atlasctl/pkg/plan"
 )
 
@@ -522,4 +523,44 @@ func TestLiveDiff_ProviderStyle_AlreadyCorrectNamespace(t *testing.T) {
 	assert.Equal(t, plan.ChangeNoOp, cs[0].Kind)
 	assert.Empty(t, findChanges(cs, key, plan.ChangeStop))
 	assert.Empty(t, findChanges(cs, key, plan.ChangeCreate))
+}
+
+// TestLiveDiff_NamespaceFalsePositive_OptionsChanged: the stored namespace is
+// empty and the measurement already runs under the codec namespace, so the
+// namespace part of the stop+create is a false positive. A changed option is a
+// real structural change, so the stop+create must be kept; unchanged options
+// must cancel it.
+func TestLiveDiff_NamespaceFalsePositive_OptionsChanged(t *testing.T) {
+	key := plan.MsmKey{Name: "dns-canary", Cohort: "high-freq"}
+	codec := plan.NewTagCodec("new-ns")
+
+	run := func(want, have config.MsmOptions) plan.Changeset {
+		desired := map[plan.MsmKey]plan.MsmSpec{key: {
+			Namespace: codec.Namespace(), Target: "canary.supabase.co", Type: plan.MsmTypeDNS,
+			Interval: 60, ProbeIDs: []uint32{1, 2}, Options: want,
+		}}
+		state := plan.NewStateFile()
+		state.SetRecord("dns-canary", "high-freq", plan.MsmRecord{
+			MsmID: 12345678, Target: "canary.supabase.co", Type: "dns",
+			Interval: 60, ProbeIDs: []uint32{1, 2}, Options: have,
+		})
+		live := taggedInfoNS(12345678, codec.Namespace(), "dns-canary", "high-freq")
+		client := &plan.FakeMsmClient{
+			Measurements: map[uint64]plan.MsmInfo{12345678: live},
+			ListResult:   []plan.MsmInfo{live},
+		}
+		cs, _, err := plan.LiveDiff(context.Background(), desired, state, client, codec)
+		require.NoError(t, err)
+		return cs
+	}
+
+	aaaa := config.MsmOptions{DNS: config.DNSOptions{QueryType: "AAAA"}}
+
+	cs := run(aaaa, config.MsmOptions{})
+	assert.Len(t, findChanges(cs, key, plan.ChangeStop), 1, "changed option keeps the stop")
+	assert.Len(t, findChanges(cs, key, plan.ChangeCreate), 1, "changed option keeps the create")
+
+	cs = run(aaaa, aaaa)
+	assert.Empty(t, findChanges(cs, key, plan.ChangeStop), "namespace-only difference is cancelled")
+	assert.Len(t, findChanges(cs, key, plan.ChangeNoOp), 1)
 }

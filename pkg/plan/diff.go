@@ -82,6 +82,7 @@ func DesiredState(cfg config.Config, selected map[string][]selection.SelectedCoh
 				HttpPath:      msm.HttpPath,
 				HttpPort:      msm.HttpPort,
 				HttpVersion:   msm.HttpVersion,
+				Options:       msm.MsmOptions,
 				HourlyCredits: specHourlyCredits(len(ids), msmType, sc.Cohort.IntervalSeconds),
 				DailyCredits:  specDailyCredits(len(ids), msmType, sc.Cohort.IntervalSeconds),
 			}
@@ -173,16 +174,19 @@ func isStructuralChange(rec MsmRecord, want MsmSpec) bool {
 	if rec.Target != want.Target ||
 		MsmType(rec.Type) != want.Type ||
 		rec.AF != want.AF ||
-		rec.Interval != want.Interval {
+		rec.Interval != want.Interval ||
+		rec.Options != want.Options {
 		return true
 	}
-	if want.Type == MsmTypeHTTP {
-		return rec.HttpMethod != want.HttpMethod ||
-			rec.HttpPath != want.HttpPath ||
-			rec.HttpPort != want.HttpPort ||
-			rec.HttpVersion != want.HttpVersion
-	}
-	return false
+	return want.Type == MsmTypeHTTP && httpFieldsDiffer(rec, want)
+}
+
+// httpFieldsDiffer reports whether the HTTP-specific fields of rec and want differ.
+func httpFieldsDiffer(rec MsmRecord, want MsmSpec) bool {
+	return rec.HttpMethod != want.HttpMethod ||
+		rec.HttpPath != want.HttpPath ||
+		rec.HttpPort != want.HttpPort ||
+		rec.HttpVersion != want.HttpVersion
 }
 
 // probeDelta returns the probe IDs to add and remove when moving from current

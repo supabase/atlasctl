@@ -3,9 +3,11 @@ package atlasapi
 import (
 	"context"
 	"fmt"
+	"time"
 
 	goat "github.com/robert-kisteleki/goat"
 
+	"github.com/supabase/atlasctl/pkg/config"
 	"github.com/supabase/atlasctl/pkg/plan"
 )
 
@@ -24,55 +26,166 @@ func NewApplyClient(apiKey string, verbose bool, codec plan.TagCodec) (*ApplyCli
 	return &ApplyClient{MsmClient: *msm}, nil
 }
 
+// baseOptsFromSpec maps the interval, tags and common options onto goat's
+// BaseOptions. Zero values are omitted by goat, so the API default applies.
+func baseOptsFromSpec(spec plan.MsmSpec, tags []string) *goat.BaseOptions {
+	c := spec.Options.Common
+	return &goat.BaseOptions{
+		Interval:            uint(spec.Interval),
+		Tags:                tags,
+		ResolveOnProbe:      c.ResolveOnProbe,
+		Spread:              c.Spread,
+		SkipDNSCheck:        c.SkipDNSCheck,
+		DnsReLookup:         c.TargetUpdateHours,
+		AutoTopup:           c.AutoTopup,
+		AutoTopupDays:       c.AutoTopupDaysOff,
+		AutoTopupSimilarity: c.AutoTopupSimilarity,
+	}
+}
+
+func pingOptsFromSpec(spec plan.MsmSpec) *goat.PingOptions {
+	o := spec.Options.Ping
+	return &goat.PingOptions{
+		Packets:        o.Packets,
+		PacketInterval: o.PacketInterval,
+		IncludeProbeID: o.IncludeProbeID,
+	}
+}
+
+// traceOptsFromSpec leaves Protocol empty when unset: goat then defaults to UDP.
+func traceOptsFromSpec(spec plan.MsmSpec) *goat.TraceOptions {
+	o := spec.Options.Traceroute
+	return &goat.TraceOptions{
+		Protocol:        o.Protocol,
+		ResponseTimeout: o.ResponseTimeout,
+		Packets:         o.Packets,
+		ParisId:         o.Paris,
+		FirstHop:        o.FirstHop,
+		LastHop:         o.MaxHops,
+		DestinationEH:   o.DestinationOptSize,
+		HopByHopEH:      o.HopByHopOptSize,
+		DontFragment:    o.DontFragment,
+	}
+}
+
+// dnsOptsFromSpec resolves spec.Target (the query argument) through the probe's
+// own resolver. Empty Type, Class and Protocol fall back to goat's A, IN and UDP.
+func dnsOptsFromSpec(spec plan.MsmSpec) *goat.DnsOptions {
+	o := spec.Options.DNS
+	return &goat.DnsOptions{
+		Protocol:       o.Protocol,
+		Class:          o.QueryClass,
+		Type:           o.QueryType,
+		Argument:       spec.Target,
+		UseResolver:    true,
+		UseMacros:      o.UseMacros,
+		Nsid:           o.SetNSIDBit,
+		UdpPayloadSize: o.UDPPayloadSize,
+		Retries:        o.Retry,
+		IncludeQbuf:    o.IncludeQbuf,
+		PrependProbeID: o.PrependProbeID,
+		SetRd:          o.SetRDBit,
+		SetDo:          o.SetDOBit,
+		Timeout:        o.Timeout,
+	}
+}
+
+func tlsOptsFromSpec(spec plan.MsmSpec) *goat.TlsOptions {
+	o := spec.Options.TLS
+	return &goat.TlsOptions{Port: o.Port, Sni: o.Hostname}
+}
+
 // httpOptsFromSpec converts the HTTP-specific fields on a MsmSpec into a
 // *goat.HttpOptions. Returns nil when all fields are zero (goat uses its own
-// defaults — default method HEAD, path "/", port 80).
+// defaults: method HEAD, path "/", port 80).
 func httpOptsFromSpec(spec plan.MsmSpec) *goat.HttpOptions {
-	if spec.HttpMethod == "" && spec.HttpPath == "" && spec.HttpPort == 0 && spec.HttpVersion == "" {
+	o := spec.Options.HTTP
+	if spec.HttpMethod == "" && spec.HttpPath == "" && spec.HttpPort == 0 && spec.HttpVersion == "" &&
+		o == (config.HTTPOptions{}) {
 		return nil
 	}
 	return &goat.HttpOptions{
-		Method:  spec.HttpMethod,
-		Path:    spec.HttpPath,
-		Port:    spec.HttpPort,
-		Version: spec.HttpVersion,
+		Method:             spec.HttpMethod,
+		Path:               spec.HttpPath,
+		Port:               spec.HttpPort,
+		Version:            spec.HttpVersion,
+		Query:              o.QueryString,
+		HeaderBytes:        o.HeaderBytes,
+		ExtendedTiming:     o.ExtendedTiming,
+		MoreExtendedTiming: o.MoreExtendedTiming,
 	}
+}
+
+// newGoatSpec builds the goat measurement spec for spec, without probes or
+// credentials: the definition, plus the spec-level start, stop and bill-to
+// options. Shared by CreateMeasurement and ValidateMsmSpec so that validation
+// sees exactly what apply will send.
+func newGoatSpec(desc string, spec plan.MsmSpec, tags []string) (*goat.MeasurementSpec, error) {
+	ms := goat.NewMeasurementSpec()
+	base := baseOptsFromSpec(spec, tags)
+	af := uint(spec.AF)
+
+	var defErr error
+	switch spec.Type {
+	case plan.MsmTypeDNS:
+		// The target of a DNS definition is a nameserver; atlasctl always uses
+		// the probe's resolver, so it is left empty and spec.Target goes in
+		// query_argument.
+		defErr = ms.AddDns(desc, "", af, base, dnsOptsFromSpec(spec))
+	case plan.MsmTypePing:
+		defErr = ms.AddPing(desc, spec.Target, af, base, pingOptsFromSpec(spec))
+	case plan.MsmTypeTLS:
+		defErr = ms.AddTls(desc, spec.Target, af, base, tlsOptsFromSpec(spec))
+	case plan.MsmTypeTraceroute:
+		defErr = ms.AddTrace(desc, spec.Target, af, base, traceOptsFromSpec(spec))
+	case plan.MsmTypeHTTP:
+		defErr = ms.AddHttp(desc, spec.Target, af, base, httpOptsFromSpec(spec))
+	default:
+		return nil, fmt.Errorf("unsupported measurement type %q", spec.Type)
+	}
+	if defErr != nil {
+		return nil, defErr
+	}
+
+	c := spec.Options.Common
+	if c.StartTime != "" {
+		t, err := time.Parse(time.RFC3339, c.StartTime)
+		if err != nil {
+			return nil, fmt.Errorf("start_time: %w", err)
+		}
+		ms.StartTime(t)
+	}
+	if c.StopTime != "" {
+		t, err := time.Parse(time.RFC3339, c.StopTime)
+		if err != nil {
+			return nil, fmt.Errorf("stop_time: %w", err)
+		}
+		ms.EndTime(t)
+	}
+	if c.BillTo != "" {
+		ms.BillTo(c.BillTo)
+	}
+	return ms, nil
+}
+
+// specJSON returns the JSON body that CreateMeasurement would POST for spec,
+// using a placeholder probe because the API requires at least one.
+func specJSON(spec plan.MsmSpec) ([]byte, error) {
+	ms, err := newGoatSpec("validate", spec, nil)
+	if err != nil {
+		return nil, fmt.Errorf("invalid measurement spec: %w", err)
+	}
+	if err := ms.AddProbesList([]uint{1}); err != nil {
+		return nil, err
+	}
+	return ms.GetApiJson()
 }
 
 // ValidateMsmSpec builds the goat measurement spec locally and calls GetApiJson
 // to check for structural errors without making any API call. Use this during
 // plan to surface spec problems before apply.
 func ValidateMsmSpec(spec plan.MsmSpec) error {
-	ms := goat.NewMeasurementSpec()
-	baseOpts := &goat.BaseOptions{Interval: uint(spec.Interval)}
-	af := uint(spec.AF)
-
-	var defErr error
-	switch spec.Type {
-	case plan.MsmTypeDNS:
-		defErr = ms.AddDns("validate", "", af, baseOpts, &goat.DnsOptions{
-			Type: "A", Argument: spec.Target, UseResolver: true,
-		})
-	case plan.MsmTypePing:
-		defErr = ms.AddPing("validate", spec.Target, af, baseOpts, nil)
-	case plan.MsmTypeTLS:
-		defErr = ms.AddTls("validate", spec.Target, af, baseOpts, nil)
-	case plan.MsmTypeTraceroute:
-		defErr = ms.AddTrace("validate", spec.Target, af, baseOpts, nil)
-	case plan.MsmTypeHTTP:
-		defErr = ms.AddHttp("validate", spec.Target, af, baseOpts, httpOptsFromSpec(spec))
-	default:
-		return fmt.Errorf("unsupported measurement type %q", spec.Type)
-	}
-	if defErr != nil {
-		return fmt.Errorf("invalid measurement spec: %w", defErr)
-	}
-
-	// GetApiJson requires at least one probe entry; use a placeholder.
-	if err := ms.AddProbesList([]uint{1}); err != nil {
-		return err
-	}
-	_, err := ms.GetApiJson()
+	_, err := specJSON(spec)
 	return err
 }
 
@@ -87,40 +200,13 @@ func (c *ApplyClient) CreateMeasurement(ctx context.Context, spec plan.MsmSpec) 
 		return 0, err
 	}
 
-	ms := goat.NewMeasurementSpec()
+	desc := c.TagCodec.Format(spec.Key.Name, spec.Key.Cohort)
+	ms, err := newGoatSpec(desc, spec, []string{c.TagCodec.Namespace()})
+	if err != nil {
+		return 0, fmt.Errorf("building measurement definition: %w", err)
+	}
 	ms.ApiKey(c.apiKey)
 	ms.Verbose(c.Verbose)
-
-	desc := c.TagCodec.Format(spec.Key.Name, spec.Key.Cohort)
-	baseOpts := &goat.BaseOptions{
-		Interval: uint(spec.Interval),
-		Tags:     []string{c.TagCodec.Namespace()},
-	}
-	af := uint(spec.AF)
-
-	var defErr error
-	switch spec.Type {
-	case plan.MsmTypeDNS:
-		// spec.Target is the domain to resolve (query_argument). DNS measurements
-		// use the probe's default resolver; no explicit nameserver target is set.
-		defErr = ms.AddDns(desc, "", af, baseOpts, &goat.DnsOptions{
-			Type:     "A",
-			Argument: spec.Target, UseResolver: true,
-		})
-	case plan.MsmTypePing:
-		defErr = ms.AddPing(desc, spec.Target, af, baseOpts, nil)
-	case plan.MsmTypeTLS:
-		defErr = ms.AddTls(desc, spec.Target, af, baseOpts, nil)
-	case plan.MsmTypeTraceroute:
-		defErr = ms.AddTrace(desc, spec.Target, af, baseOpts, nil)
-	case plan.MsmTypeHTTP:
-		defErr = ms.AddHttp(desc, spec.Target, af, baseOpts, httpOptsFromSpec(spec))
-	default:
-		return 0, fmt.Errorf("unsupported measurement type %q", spec.Type)
-	}
-	if defErr != nil {
-		return 0, fmt.Errorf("building measurement definition: %w", defErr)
-	}
 
 	probeList := make([]uint, len(spec.ProbeIDs))
 	for i, id := range spec.ProbeIDs {

@@ -24,14 +24,121 @@ For a conceptual walkthrough of how bands, cohorts, and continental coverage int
 | `type` | string | yes | `dns`, `tls`, `ping`, `traceroute`, or `http` |
 | `target` | string | yes | Hostname or IP address to measure |
 | `af` | int | no | Address family: 4 or 6. Defaults to the RIPE Atlas platform default |
-| `query_type` | string | no | DNS query type. DNS measurements only |
+| `query_type` | string | no | DNS query type. DNS measurements only. Legacy alias for `dns.query_type` |
 | `http_method` | string | no | HTTP method: `GET`, `HEAD` (default), or `POST`. HTTP measurements only |
 | `http_path` | string | no | URL path. HTTP measurements only. Defaults to `/` |
 | `http_port` | int | no | TCP port. HTTP measurements only. Defaults to `80` |
 | `http_version` | string | no | HTTP version: `1.0` or `1.1`. HTTP measurements only |
+| `common` | block | no | Options shared by every measurement type. See [Measurement options](#measurement-options) |
+| `ping`, `traceroute`, `dns`, `tls`, `http` | block | no | Options for one measurement type. A block is only valid on a measurement of the same `type` |
 | `cohorts` | list | yes | The cohort tiers for this measurement |
 
 **Note on HTTP access.** RIPE Atlas restricts `http` measurement creation to researchers and other approved account tiers. Most API keys will receive a 403 from the RIPE Atlas API when apply runs. The `http` type is fully supported by atlasctl and the goat library for accounts where the platform grants it. Use `tls` to test HTTPS reachability without this restriction.
+
+### Measurement options
+
+Every option is optional. An option that is not set is left out of the RIPE Atlas request, so the platform default applies. Changing any option on a running measurement stops it and creates a new one, because the options cannot be edited in place.
+
+```yaml
+measurements:
+  - name: api-dns
+    type: dns
+    target: api.example.com
+    common:
+      spread: 30
+      resolve_on_probe: true
+    dns:
+      query_type: AAAA
+      set_rd_bit: true
+      retry: 2
+    cohorts:
+      - name: default
+        probe_count: 50
+        max_probes_per_cell: 2
+        interval_seconds: 300
+```
+
+#### `common` (all types)
+
+| Field | Type | Description |
+|---|---|---|
+| `resolve_on_probe` | bool | Resolve the target on each probe instead of once centrally |
+| `spread` | int | Seconds over which probe start times are spread within one interval |
+| `skip_dns_check` | bool | Skip the platform's DNS check of the target at creation time |
+| `target_update_hours` | int | Re-resolve the target every N hours |
+| `auto_topup` | bool | Replace probes that go offline. Implied by the next two fields |
+| `auto_topup_prb_days_off` | int | Days offline before a probe is replaced |
+| `auto_topup_prb_similarity` | float | Similarity of the replacement probe, between 0 and 1 |
+| `start_time` | string | RFC 3339 start time |
+| `stop_time` | string | RFC 3339 stop time. Must be after `start_time` |
+| `bill_to` | string | Bill another account that has allowed you to |
+
+A measurement that reaches its `stop_time` ends on its own. The next `apply` sees it missing and tries to create it again with a stop time that has already passed, which is unlikely to be accepted. Remove `stop_time` or the measurement from the config when it ends.
+
+#### `ping`
+
+| Field | Type | Description |
+|---|---|---|
+| `packets` | int | Packets per result. Platform default 3 |
+| `packet_interval` | int | Milliseconds between packets |
+| `include_probe_id` | bool | Include the probe ID in the payload |
+
+#### `traceroute`
+
+| Field | Type | Description |
+|---|---|---|
+| `protocol` | string | `ICMP`, `UDP`, or `TCP`. atlasctl defaults to `UDP`, the platform default is `ICMP` |
+| `response_timeout` | int | Milliseconds to wait for a response |
+| `packets` | int | Packets per hop |
+| `paris` | int | Paris traceroute variation |
+| `first_hop` | int | First TTL |
+| `max_hops` | int | Last TTL |
+| `destination_option_size` | int | IPv6 destination options header size |
+| `hop_by_hop_option_size` | int | IPv6 hop by hop options header size |
+| `dont_fragment` | bool | Set the don't fragment bit |
+
+#### `dns`
+
+The target is sent as the query argument and the probe's own resolver is always used.
+
+| Field | Type | Description |
+|---|---|---|
+| `query_type` | string | Record type such as `A` (default), `AAAA`, `NS`, `MX`, `TXT`. Takes priority over the flat `query_type` key, and the two must agree if both are set |
+| `query_class` | string | `IN` (default) or `CHAOS` |
+| `protocol` | string | `UDP` (default) or `TCP` |
+| `use_macros` | bool | Expand `$p`, `$r` and `$t` in the query argument |
+| `set_nsid_bit` | bool | Request the NSID option |
+| `include_qbuf` | bool | Include the query buffer in results |
+| `prepend_probe_id` | bool | Prefix the query with the probe ID |
+| `set_rd_bit` | bool | Set the recursion desired bit |
+| `set_do_bit` | bool | Set the DNSSEC OK bit |
+| `udp_payload_size` | int | EDNS0 UDP payload size |
+| `retry` | int | Retries per query |
+| `timeout` | int | Milliseconds before a query times out |
+
+#### `tls`
+
+| Field | Type | Description |
+|---|---|---|
+| `port` | int | TCP port. Platform default 443 |
+| `hostname` | string | Server name sent as SNI. Useful when the target is an IP address |
+
+#### `http`
+
+These extend the flat `http_*` keys above.
+
+| Field | Type | Description |
+|---|---|---|
+| `query_string` | string | Query string appended to the path |
+| `header_bytes` | int | Bytes of response headers to read |
+| `extended_timing` | bool | Report extended timing |
+| `more_extended_timing` | bool | Report more extended timing |
+
+#### Platform fields not yet supported
+
+The goat library atlasctl uses cannot send these, so they are not available: `is_public`, packet `size` for ping, traceroute and NTP, traceroute `port`, `duplicate_timeout`, `traffic_class` and `gap_limit`, DNS `tls`, `port`, `cookies`, `ttl`, `set_ad_bit`, `set_cd_bit`, `default_client_subnet` and `include_abuf`, and HTTP `user_agent`, `max_bytes_read`, `host` and `https`. `is_oneoff` is also not offered, because a finished one off measurement would be recreated on every apply.
+
+Credit estimates use a fixed cost per result for each type and do not account for options such as `packets` that change the real cost.
 
 ### Cohort fields
 

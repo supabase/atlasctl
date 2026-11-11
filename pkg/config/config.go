@@ -82,17 +82,20 @@ const (
 
 // Measurement defines a single measurement target and its cohort assignments.
 type Measurement struct {
-	Name      string              `yaml:"name"`
-	Type      MeasurementType     `yaml:"type"`
-	Target    string              `yaml:"target"`
-	AF        int                 `yaml:"af"`         // address family: 4 or 6, default 4
-	QueryType string              `yaml:"query_type"` // DNS only: A, AAAA, NS, MX, ...
+	Name      string          `yaml:"name"`
+	Type      MeasurementType `yaml:"type"`
+	Target    string          `yaml:"target"`
+	AF        int             `yaml:"af"`         // address family: 4 or 6, default 4
+	QueryType string          `yaml:"query_type"` // DNS only: legacy alias for dns.query_type
 	// HTTP-only fields. Ignored for all other measurement types.
 	HttpMethod  string `yaml:"http_method"`  // GET, HEAD (default), POST
 	HttpPath    string `yaml:"http_path"`    // URL path (default "/")
 	HttpPort    uint   `yaml:"http_port"`    // default 80
 	HttpVersion string `yaml:"http_version"` // "1.0" or "1.1"
-	Cohorts     []MeasurementCohort `yaml:"cohorts"`
+	// Optional per-type and common fields; see MsmOptions.
+	MsmOptions `yaml:",inline"`
+
+	Cohorts []MeasurementCohort `yaml:"cohorts"`
 }
 
 // BandThresholds defines the minimum score for each band tier.
@@ -159,6 +162,7 @@ func (c *Config) applyDefaults() {
 		if c.Measurements[i].AF == 0 {
 			c.Measurements[i].AF = 4
 		}
+		c.Measurements[i].normalizeOptions()
 		for j := range c.Measurements[i].Cohorts {
 			cohort := &c.Measurements[i].Cohorts[j]
 			if cohort.CfgPreset == "" {
@@ -216,6 +220,7 @@ func (c *Config) validate() error {
 				errs = append(errs, fmt.Errorf("measurement %q: http_version %q must be \"1.0\" or \"1.1\"", m.Name, m.HttpVersion))
 			}
 		}
+		errs = append(errs, m.validateOptions()...)
 		if m.Target == "" {
 			errs = append(errs, fmt.Errorf("measurement %q: target is required", m.Name))
 		}
